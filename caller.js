@@ -18,7 +18,14 @@ import {useNavigation, useRoute} from "@react-navigation/native";
 import Styles from "../global/styles";
 import VerticalAligner from "../common/verticalaligner";
 import {FontAwesomeIcon} from "@fortawesome/react-native-fontawesome";
-import {faAbacus, faPhoneArrowDown, faPhoneArrowUp, faPhotoVideo, faUser} from "@fortawesome/pro-regular-svg-icons";
+import {
+    faAbacus,
+    faCamera, faCameraRotate, faCameraSlash,
+    faPhoneArrowDown,
+    faPhoneArrowUp,
+    faPhotoVideo, faSpeaker,
+    faUser, faVolume, faVolumeMute, faVolumeSlash, faVolumeXmark
+} from "@fortawesome/pro-regular-svg-icons";
 import Variables from "../global/variables";
 
 import Time from "../utils/time";
@@ -54,6 +61,17 @@ const Caller = (props) => {
         profile_photo:null
     });
 
+    const [controls, setControls] = useState({
+        video:false,
+        mute:false,
+        front:true,
+        speaker:false
+    })
+
+    const [remoteControls, setRemoteControls] = useState({
+        video:false
+    })
+
     const connectionBufferRef = useRef(
         new RTCPeerConnection({
             iceServers: [
@@ -85,6 +103,63 @@ const Caller = (props) => {
     /*******USE EFFECTS********/
 
     useEffect(() => {
+
+        let f = async() => {
+
+            if (localStreamRef.current != null) {
+
+                for (let i = 0; i < localStreamRef.current.getVideoTracks().length; i++) {
+                    localStreamRef.current.getVideoTracks()[i].enabled = controls.video
+                }
+
+
+                let callParams = {
+                    user: Variables.userStorerId,
+                    messaging_channel: route.params.channel,
+                    video:controls.video
+                };
+
+
+                await Variables.server.sendSync('video', callParams);
+
+            }
+
+        }
+
+        f();
+
+    }, [controls.video]);
+
+    useEffect(() => {
+
+        if(localStreamRef.current != null) {
+
+            for (let i = 0; i < localStreamRef.current.getAudioTracks().length; i++) {
+                localStreamRef.current.getAudioTracks()[i].enabled = controls.mute;
+            }
+
+        }
+
+    }, [controls.mute]);
+
+    useEffect(() => {
+
+        if(localStreamRef.current != null) {
+
+
+        }
+
+    }, [controls.flip]);
+
+    useEffect(() => {
+
+        Variables.server.waitForResponse('video_received', async function(ret){
+
+            setRemoteControls({
+                video:ret.video
+            })
+
+        });
 
         Variables.server.waitForResponse('call_dropped_received', async function(ret){
 
@@ -277,12 +352,109 @@ const Caller = (props) => {
 
     }
 
+    const turnOnVideo = async() => {
+
+        setControls({
+            video:!controls.video,
+            mute:controls.mute,
+            front:controls.front,
+            speaker:controls.speaker
+        })
+
+    }
+
+    const mute = () => {
+
+        setControls({
+            video:controls.video,
+            mute:!controls.mute,
+            front:controls.front,
+            speaker:controls.speaker
+        })
+
+
+    }
+
+    const flipCamera = () => {
+
+        setControls({
+            video:controls.video,
+            mute:controls.mute,
+            front:!controls.front,
+            speaker:controls.speaker
+        })
+
+    }
+
 
     return(
 
         <View style={{flex:1}}>
 
-            <RTCView streamURL={remoteStreamRef.current?.toURL()} style={{position:'absolute', top:0, width:'100%', height:'100%', backgroundColor:'black'}}/>
+            <RTCView streamURL={remoteStreamRef.current?.toURL()} style={{zIndex:1000, position:'absolute', top:0, width:'100%', height:'100%', backgroundColor:'red'}}/>
+
+            {!remoteControls.video && (
+
+                <View style={{zIndex:1000, position:'absolute', top:0, width:'100%', height:'100%'}}>
+
+                    <View style={{flex:1, backgroundColor:Styles.blackColor}}>
+
+                        <View style={{marginTop:Styles.insets.top, flexDirection:'column', width:'100%', height:200}}>
+
+                            <VerticalAligner/>
+
+                            {userDetails.profile_photo != null ?
+                                <View style={{alignSelf:'center', width:60, height:60, borderRadius:30, backgroundColor:Styles.whiteColor}}>
+                                    <Image source={{uri:Variables.serverFileIp() + '/pp/' + userDetails.profile_photo}} />
+                                </View>
+                                :
+                                <View style={{alignSelf:'center', width:60, height:60, borderRadius:30, backgroundColor:Styles.whiteColor}}>
+                                    <VerticalAligner/>
+                                    <FontAwesomeIcon icon={faUser} size={40} color={Styles.fontColor} style={{alignSelf:'center'}}/>
+                                    <VerticalAligner/>
+                                </View>
+                            }
+
+
+
+                            <Text style={{textAlign:'center', marginTop:15, color: Styles.whiteColor, fontSize: 20, lineHeight: 20, fontFamily: Styles.fontFamily}}>
+                                {userDetails.nickname}
+                            </Text>
+
+                            <View style={{alignSelf:'center', flexDirection:'row', marginTop:5}}>
+
+                                <Text style={{textAlign:'center', color: Styles.whiteColor, fontSize: 15, lineHeight: 20, fontFamily: Styles.fontFamily}}>
+                                    {userDetails.fn}
+                                </Text>
+                                <Text style={{textAlign:'center', color: Styles.whiteColor, fontSize: 15, lineHeight: 20, fontFamily: Styles.fontFamily}}>
+                                    {' '}
+                                </Text>
+                                <Text style={{textAlign:'center', color: Styles.whiteColor, fontSize: 15, lineHeight: 20, fontFamily: Styles.fontFamily}}>
+                                    {userDetails.ln}
+                                </Text>
+
+                            </View>
+
+                            <Text style={{textAlign:'center', color: Styles.orangeColor, marginTop:20, fontSize: 20, lineHeight: 20, fontFamily: Styles.fontFamily}}>
+                                {callMessage}
+                            </Text>
+
+                            <VerticalAligner/>
+
+                        </View>
+
+
+                    </View>
+
+                </View>
+
+            )}
+
+            {controls.video && (
+
+                <RTCView streamURL={localStreamRef.current?.toURL()} style={{zIndex:1000, position:'absolute',borderRadius:5,  right:30, bottom:130, width:200, height:300, backgroundColor:'orange'}}/>
+
+            )}
 
             <View style={{flex:1, backgroundColor:Styles.blackColor}}>
 
@@ -335,16 +507,78 @@ const Caller = (props) => {
 
             <View style={{flex:1}}/>
 
-            <View style={{height:70, marginBottom:Styles.insets.bottom}}>
+            <View style={{zIndex:2000, height:70, marginBottom:Styles.insets.bottom}}>
 
                 <View style={{flex:1, flexDirection:'row', backgroundColor:Styles.backgroundColor, marginLeft:20, marginRight:20, borderRadius:50, opacity:.7}}>
 
 
-                    <View style={{flex:.2}}/>
+                    {answered ?
 
-                    <View style={{flex:.2}}/>
+                        <View style={{flex:.2}} >
 
-                    {!answered ?
+                            <VerticalAligner/>
+
+                            <Pressable onPress={turnOnVideo} style={{alignSelf:'center', backgroundColor:Styles.whiteColor, width:50, height:50, borderRadius:25}}>
+                                <VerticalAligner/>
+                                <View style={{flexDirection:'column'}}>
+                                    <FontAwesomeIcon icon={controls.video ? faCameraSlash : faCamera} size={25} color={Styles.fontColor} style={{alignSelf:'center'}}/>
+                                </View>
+                                <VerticalAligner/>
+                            </Pressable>
+
+                            <VerticalAligner/>
+
+                        </View>
+
+                        :
+
+                        <View style={{flex:.2}}/>
+
+                    }
+
+                    {answered ?
+
+                        <View style={{flex:.2}} >
+
+                            <VerticalAligner/>
+
+                            <Pressable onPress={mute} style={{alignSelf:'center', backgroundColor:Styles.whiteColor, width:50, height:50, borderRadius:25}}>
+                                <VerticalAligner/>
+                                <View style={{flexDirection:'column'}}>
+                                    <FontAwesomeIcon icon={controls.mute ? faVolume : faVolumeXmark} size={25} color={Styles.fontColor} style={{alignSelf:'center'}}/>
+                                </View>
+                                <VerticalAligner/>
+                            </Pressable>
+
+                            <VerticalAligner/>
+
+                        </View>
+
+                        :
+
+                        <View style={{flex:.2}}/>
+
+                    }
+
+                    {answered ?
+
+                        <View style={{flex:.2}} >
+
+                            <VerticalAligner/>
+
+                            <Pressable onPress={flipCamera} style={{alignSelf:'center', backgroundColor:Styles.whiteColor, width:50, height:50, borderRadius:25}}>
+                                <VerticalAligner/>
+                                <View style={{flexDirection:'column'}}>
+                                    <FontAwesomeIcon icon={faCameraRotate} size={25} color={Styles.fontColor} style={{alignSelf:'center'}}/>
+                                </View>
+                                <VerticalAligner/>
+                            </Pressable>
+
+                            <VerticalAligner/>
+
+                        </View>
+
+                        :
 
                         <View style={{flex:.2}} >
 
@@ -362,14 +596,33 @@ const Caller = (props) => {
 
                         </View>
 
+                    }
+
+
+
+                    {answered ?
+
+                        <View style={{flex:.2}} >
+
+                            <VerticalAligner/>
+
+                            <Pressable onPress={dropCall} style={{alignSelf:'center', backgroundColor:Styles.whiteColor, width:50, height:50, borderRadius:25}}>
+                                <VerticalAligner/>
+                                <View style={{flexDirection:'column'}}>
+                                    <FontAwesomeIcon icon={faVolumeSlash} size={25} color={Styles.fontColor} style={{alignSelf:'center'}}/>
+                                </View>
+                                <VerticalAligner/>
+                            </Pressable>
+
+                            <VerticalAligner/>
+
+                        </View>
+
                         :
 
                         <View style={{flex:.2}}/>
 
-
                     }
-
-                    <View style={{flex:.2}}/>
 
                     {answered ?
 
