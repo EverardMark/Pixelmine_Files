@@ -1,0 +1,114 @@
+npx react-native setup-ios-permissions
+
+rm -rf ~/Library/Developer/Xcode/DerivedData
+
+SET PERSIST sql_mode=(SELECT REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY',''));
+
+
+./gradlew --stop
+
+./gradlew assembleRelease
+
+
+adb reverse tcp:8081  tcp:8081
+
+arch -x86_64 pod install
+
+
+Office Route
+
+  UN : admin
+  PW : bZn2pun6TL
+
+MySql
+
+  PW : Sutopp@12@90
+
+  UN : pxl_user
+  PW : Sutopp@12@90
+
+  UN : remoteuser
+  PW : 9CXUPUZFzuz3lfZmKAn7Q4NiInMq242z
+
+  UN : serveruser
+  PW : sutopp@12
+
+
+Apple Developer
+
+  UN : kai.sumiya@quest2020.net
+  PW : Pixel0223
+
+APN
+
+  Name:PXLAPN
+  Key ID:44W35895CU
+  Services:Apple Push Notifications service (APNs)
+
+
+AWS
+
+  UN : quest2020.inc@gmail.com
+  PW : hfeuwpgfueow@u78e02947r09
+
+  UN : everardpadama@gmail.com
+  PW : Zmqp1010qpzm
+
+  UN : everardmarkpadama@gmail.com
+  PW : Zmqp10_10qpzm@12@90
+  SK : QFVUIZRVIZFX5QI4AHND2FWMESEQ4NZ6FLOAYZ7ZERONJL6YDQSMPTP6YSUKND6X
+
+Go Daddy
+
+  UN : 327677663
+  PW : Zmqp1010qpzm
+
+  UN : markpadama@pixelmine.org
+  PW : zmqp1010qpzm
+
+  UN : pixie@pixelmine.org
+  PW : Sutopp21_
+
+
+Jira
+
+  UN : markpadama@pixelmine.org
+  PW : Zmqp10_10qpzm
+  SK : 0UA5 6TBT 5RRM QQYS 9XK0 CO8B
+
+Github
+
+  UN : quest-japan
+  PW : Sodei0223123
+
+  UN : everardpadama@gmail.com
+  PW : 10qpzmzmqp10
+
+  UN : pixie@pixelmine.org
+  PW : 10qpzm_zmqp10
+
+  
+Digicert
+
+  UN : markpadama@pixelmine.org
+  PW : Zmqp10_10qpzm@12@90
+
+Jetbrains
+
+  UN : everardpadama@gmail.com
+  PW : 10qpzmzmqp10
+
+Google Play Certificate
+
+  Keystore Password : Sutopp@12@90
+
+ApyHub
+
+  API Key : APY0TDkKu94VxOP3i6ss3W3rIzd0aXgAAh6SiokBPQAPoYf5UkuXqWt9CNt4hxFWW
+
+
+
+AntMedia
+
+  UN :markpadama@pixelmine.org
+  PW : Zmqp10_10qpzm@12@90
