@@ -4,6 +4,10 @@ rm -rf ~/Library/Developer/Xcode/DerivedData
 
 SET PERSIST sql_mode=(SELECT REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY',''));
 
+select COLUMN_NAME from information_schema.COLUMNS WHERE TABLE_NAME = 'user' AND TABLE_SCHEMA = 'storer'
+
+import {ViewPropTypes} from 'deprecated-react-native-prop-types';
+
 
 ./gradlew --stop
 
@@ -112,3 +116,8 @@ AntMedia
 
   UN :markpadama@pixelmine.org
   PW : Zmqp10_10qpzm@12@90
+
+
+
+
+  
