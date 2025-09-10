@@ -4,9 +4,17 @@ rm -rf ~/Library/Developer/Xcode/DerivedData
 
 SET PERSIST sql_mode=(SELECT REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY',''));
 
+ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION
+
 select COLUMN_NAME from information_schema.COLUMNS WHERE TABLE_NAME = 'user' AND TABLE_SCHEMA = 'storer'
 
 import {ViewPropTypes} from 'deprecated-react-native-prop-types';
+
+CREATE USER 'user'@'%' IDENTIFIED BY 'password';
+GRANT ALL PRIVILEGES ON *.* TO 'user'@'%' WITH GRANT OPTION;
+
+ALTER USER 'username'@'host' IDENTIFIED BY 'NEW_PASSWORD';
+
 
 
 ./gradlew --stop
@@ -42,6 +50,9 @@ Apple Developer
 
   UN : kai.sumiya@quest2020.net
   PW : Pixel0223
+
+  UN : markpadama@pixelmine.org
+  PW : Pxl2025@12@90
 
 APN
 
@@ -116,6 +127,11 @@ AntMedia
 
   UN :markpadama@pixelmine.org
   PW : Zmqp10_10qpzm@12@90
+
+PSN
+
+  UN : 
+  PW : K)B9M2-D_nGQ)jK
 
 
 

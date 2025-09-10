@@ -1,0 +1,34 @@
+Issue Type, Key, Summary, Status, Comments, Labels, Created, Updated, Reporter, Parent
+Epic, MA1-13, Register, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama,   
+Page, MA1-14, Login, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-13
+Subtask, MA1-21, Use Effect, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-14
+Subtask, MA1-22, Start Register, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-14
+Subtask, MA1-23, Code Scanner, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-14
+Subtask, MA1-24, Close QR Login, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-14
+Subtask, MA1-25, QR Login From Image, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-14
+Subtask, MA1-26, Select / Remove Selected Assets, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-14
+Subtask, MA1-27, Cancel QR Login From Image, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-14
+Subtask, MA1-28, Successful QR Login From Image, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-14
+Subtask, MA1-29, Render, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-14
+Subtask, MA1-30, Show Privacy Policy, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-14
+Subtask, MA1-31, Show Terms and Agreements, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-14
+Page, MA1-15, Names, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-13
+Subtask, MA1-35, Use Effect, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-15
+Subtask, MA1-36, Firstname Text Changed, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-15
+Subtask, MA1-37, Lastname Text Changed, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-15
+Subtask, MA1-38, Back, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-15
+Subtask, MA1-39, Next, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-15
+Subtask, MA1-40, Dismiss Keyboard, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-15
+Subtask, MA1-41, Render, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-15
+Page, MA1-16, Invitation Code, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-13
+Subtask, MA1-32, Code Scanner, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-16
+Subtask, MA1-33, Back, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-16
+Subtask, MA1-34, Render, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-16
+Page, MA1-17, DOB, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-13
+Subtask, MA1-42, Date Changed, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-17
+Subtask, MA1-43, Back, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-17
+Subtask, MA1-44, Next, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-17
+Subtask, MA1-45, Render, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-17
+Page, MA1-18, Gender, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-13
+Page, MA1-19, Nickname, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-13
+Page, MA1-20, Finish, Done,   ,   , 2025-08-10, 2025-08-10, Mark Padama, MA1-13

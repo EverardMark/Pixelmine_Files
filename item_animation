@@ -1,0 +1,219 @@
+import {Image, Pressable, Text, View, Dimensions} from "react-native";
+import ReactNativeHapticFeedback from "react-native-haptic-feedback";
+import VerticalAligner from "../common/verticalaligner";
+import {FontAwesomeIcon} from "@fortawesome/react-native-fontawesome";
+import {faImageSlash, faMeh, faSmile, faUser} from "@fortawesome/pro-regular-svg-icons";
+import Styles from "../global/styles";
+import Time from "../utils/time";
+import React, {memo, useCallback, useEffect, useMemo, useState} from "react";
+import {faReply} from "@fortawesome/pro-regular-svg-icons";
+import Reaction from "../common/reaction";
+import Animated, {
+    SlideInLeft,
+    SlideInRight,
+    SlideOutLeft,
+    SlideOutRight,
+    useAnimatedStyle,
+    useSharedValue,
+    withTiming,
+    runOnJS,
+} from "react-native-reanimated";
+import {Gesture, GestureDetector, PanGestureHandler, State} from "react-native-gesture-handler";
+import Variables from "../global/variables";
+import Carousel from "react-native-reanimated-carousel";
+import PhotoVideo from "../home/photovideo";
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const MAX_SWIPE_DISTANCE = SCREEN_WIDTH / 2;
+const SWIPE_THRESHOLD = 80;
+const ACTION_THRESHOLD = 120;
+const SWIPE_RESISTANCE = 0.4; // Resistance factor to make swipe feel stiffer
+const SWIPE_ACTIONS = {
+    LEFT: 'swipe_left',
+    RIGHT: 'swipe_right',
+    REPLY: 'reply',
+    DELETE: 'delete',
+    EDIT: 'edit'
+};
+
+const CommentItem = memo((props) => {
+
+    // Swipe gesture values
+    const translateX = useSharedValue(0);
+
+    // Animated styles
+    const commentContainerAnimatedStyle = useAnimatedStyle(() => ({
+        transform: [{ translateX: translateX.value }],
+    }));
+
+
+
+    // Haptic feedback state
+    const hasTriggeredHaptic = useSharedValue(false);
+
+    // Trigger haptic feedback when threshold is reached
+    const triggerHapticFeedback = useCallback(() => {
+        ReactNativeHapticFeedback.trigger('impactLight', {
+            enableVibrateFallback: true,
+            ignoreAndroidSystemSettings: false
+        });
+    }, []);
+
+    const panGestureHandler = Gesture.Pan()
+
+        .onStart(() => {
+            hasTriggeredHaptic.value = false;
+        })
+        .onChange((event) => {
+
+            const { translationX } = event;
+
+            // Apply resistance to make swipe feel stiffer
+            const resistantTranslationX = translationX * SWIPE_RESISTANCE;
+
+            // Limit swipe distance to half screen width
+            const limitedTranslationX = Math.max(
+                -MAX_SWIPE_DISTANCE * SWIPE_RESISTANCE,
+                Math.min(MAX_SWIPE_DISTANCE * SWIPE_RESISTANCE, resistantTranslationX)
+            );
+
+            translateX.value = limitedTranslationX;
+
+            // Use original translation for threshold detection (not the resistant one)
+            if (Math.abs(translationX) >= SWIPE_THRESHOLD && !hasTriggeredHaptic.value) {
+                hasTriggeredHaptic.value = true;
+                runOnJS(triggerHapticFeedback)();
+            }
+
+        })
+        .onEnd((event) => {
+            const { translationX, velocityX } = event;
+
+            // Use original translation values for action detection (not resistant values)
+            const shouldTriggerAction = Math.abs(translationX) > SWIPE_THRESHOLD || Math.abs(velocityX) > 800;
+
+            if (shouldTriggerAction) {
+                // Trigger action (this will also trigger haptic feedback)
+                //runOnJS(handleSwipeAction)(translationX, translationX);
+            }
+
+            // Reset position with slightly slower animation to feel more controlled
+            translateX.value = withTiming(0, { duration: 300 });
+
+            // Reset haptic state
+            hasTriggeredHaptic.value = false;
+        })
+
+
+
+    // Handle swipe completion
+    const handleSwipeAction = useCallback((direction, distance) => {
+        if (Math.abs(distance) > ACTION_THRESHOLD) {
+            // Trigger impact haptic feedback for action completion
+            ReactNativeHapticFeedback.trigger('impactMedium', {
+                enableVibrateFallback: true,
+                ignoreAndroidSystemSettings: false
+            });
+
+            if (direction > 0) {
+                // Swipe right - Reply action
+                actions(SWIPE_ACTIONS.REPLY);
+            } else {
+                // Swipe left - Delete or Edit action
+                actions(SWIPE_ACTIONS.EDIT);
+            }
+        }
+    }, [actions]);
+
+    // Memoized action handler
+    const actions = useCallback((name, args) => {
+
+    }, [props.actions, props.item]);
+
+
+    return (
+        <View style={styles.container}>
+            <GestureDetector gesture={panGestureHandler}>
+                <Animated.View style={[styles.commentContainer, commentContainerAnimatedStyle]}>
+
+                </Animated.View>
+            </GestureDetector>
+        </View>
+    );
+});
+
+const styles = {
+    container: {
+        flex: 1,
+        marginLeft: 10,
+        marginRight: 10,
+        marginTop: 10,
+        flexDirection: "row",
+        position: 'relative',
+
+    },
+    commentContainer: {
+        height:20,
+        flex: 1,
+        backgroundColor: 'red',
+        zIndex: 1
+    },
+    systemCommentContainer: {
+        flex: 1,
+        flexDirection: "row"
+    },
+    receivedCommentLayout: {
+        flex: 1,
+        flexDirection: "row",
+        gap: 10
+    },
+    sentCommentLayout: {
+        flex: 1,
+        flexDirection: "row"
+    },
+    contentContainer: {
+        flex: 1
+    },
+    spacer: {
+        flex: 1
+    },
+    carouselIndicators: {
+        position: "absolute",
+        bottom: 5,
+        height: 20,
+        alignSelf: "center",
+        flexDirection: "row"
+    },
+    indicator: {
+        marginLeft: 2.5,
+        marginRight: 2.5
+    },
+    activeIndicator: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: Styles.greenColor
+    },
+    inactiveIndicator: {
+        width: 5,
+        height: 5,
+        borderRadius: 2.5,
+        backgroundColor: Styles.backgroundColor
+    },
+    encryptionErrorContainer: {
+        backgroundColor: "#b0b3b8"
+    },
+    nicknameText: {
+        textAlign: "left",
+        letterSpacing: Styles.letterSpacing,
+        color: Styles.fontSubColor,
+        fontSize: 13,
+        lineHeight: 20,
+        marginLeft: 5,
+        fontFamily: Styles.fontFamily
+    }
+};
+
+CommentItem.displayName = 'CommentItem';
+
+export default CommentItem;
