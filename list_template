@@ -1,0 +1,293 @@
+import {View, Text, StyleSheet} from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming
+} from 'react-native-reanimated';
+
+import {faBell, faSliders} from "@fortawesome/pro-regular-svg-icons";
+
+import Header from "../components/header";
+import FakeSearchBar from "../components/fakesearchbar";
+import Styles from "../global/styles";
+import ButtonIcon from "../components/buttonicon";
+import LanguageSelector from "../language/languageselector";
+import VerticalAligner from "../common/verticalaligner";
+import {FlashList} from "@shopify/flash-list";
+import {useMemo, useRef, useCallback, memo} from "react";
+
+// Move constants outside component
+const HEADER_HEIGHT = 150;
+const SCROLL_THRESHOLD = 5;
+const SCROLL_TRIGGER_OFFSET = 50;
+
+// Generate sample data with unique IDs
+const generateSampleData = () => {
+  const baseUsers = [
+    {
+      name: "Sarah Johnson",
+      email: "sarah.johnson@example.com",
+      role: "Designer",
+      photo: "https://i.pravatar.cc/300?img=1",
+      age: 28,
+      location: "New York, USA"
+    },
+    {
+      name: "Michael Chen",
+      email: "michael.chen@example.com",
+      role: "Developer",
+      photo: "https://i.pravatar.cc/300?img=12",
+      age: 32,
+      location: "San Francisco, USA"
+    },
+    {
+      name: "Emma Williams",
+      email: "emma.williams@example.com",
+      role: "Product Manager",
+      photo: "https://i.pravatar.cc/300?img=5",
+      age: 35,
+      location: "London, UK"
+    },
+    {
+      name: "James Martinez",
+      email: "james.martinez@example.com",
+      role: "Marketing Director",
+      photo: "https://i.pravatar.cc/300?img=15",
+      age: 41,
+      location: "Austin, USA"
+    },
+    {
+      name: "Olivia Brown",
+      email: "olivia.brown@example.com",
+      role: "Data Analyst",
+      photo: "https://i.pravatar.cc/300?img=9",
+      age: 29,
+      location: "Toronto, Canada"
+    }
+  ];
+
+  const data = [];
+  let idCounter = 0;
+
+  // Add spacer item
+  data.push({
+    id: `spacer-${idCounter++}`,
+    type: 'spacer',
+    name: "Spacer"
+  });
+
+  // Generate items with unique IDs
+  for (let i = 0; i < 8; i++) {
+    baseUsers.forEach(user => {
+      data.push({
+        ...user,
+        id: `user-${idCounter++}`,
+        type: 'user'
+      });
+    });
+  }
+
+  return data;
+};
+
+const SAMPLE_DATA = generateSampleData();
+
+// Memoized Post Item Component
+const PostItem = memo(({item}) => {
+  if (item.type === 'spacer') {
+    return (
+        <View style={styles.spacerItem}>
+          <Text style={styles.itemText}>{item.name}</Text>
+        </View>
+    );
+  }
+
+  return (
+      <View style={styles.postItem}>
+        <Text style={styles.itemText}>{item.name}</Text>
+      </View>
+  );
+}, (prevProps, nextProps) => {
+  // Custom comparison function for better performance
+  return prevProps.item.id === nextProps.item.id;
+});
+
+PostItem.displayName = 'PostItem';
+
+const Posts = () => {
+  const flatListRef = useRef(null);
+  const lastScrollY = useSharedValue(0);
+  const headerTranslateY = useSharedValue(0);
+
+  // Compatible scroll handler (works with all reanimated versions)
+  const handleScroll = useCallback((event) => {
+    'worklet';
+    const currentScrollY = event.nativeEvent.contentOffset.y;
+    const delta = currentScrollY - lastScrollY.value;
+
+    // Only trigger animation if scroll distance is significant
+    if (Math.abs(delta) > SCROLL_THRESHOLD) {
+      if (delta > 0 && currentScrollY > SCROLL_TRIGGER_OFFSET) {
+        // Scrolling down - hide header
+        headerTranslateY.value = withTiming(-HEADER_HEIGHT, { duration: 250 });
+      } else if (delta < 0) {
+        // Scrolling up - show header
+        headerTranslateY.value = withTiming(0, { duration: 250 });
+      }
+      lastScrollY.value = currentScrollY;
+    }
+  }, [lastScrollY, headerTranslateY]);
+
+  const headerAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: headerTranslateY.value }],
+  }));
+
+  // Memoized callbacks
+  const gotoPostSearch = useCallback(() => {
+    // Navigation logic here
+  }, []);
+
+  const gotoPostsNotifications = useCallback(() => {
+    // Navigation logic here
+  }, []);
+
+  const gotoPostSettings = useCallback(() => {
+    // Navigation logic here
+  }, []);
+
+  const onEndReached = useCallback(() => {
+    // Load more data logic here
+  }, []);
+
+  const renderPostItem = useCallback(({item}) => {
+    return <PostItem item={item} />;
+  }, []);
+
+  const keyExtractor = useCallback((item) => item.id, []);
+
+  const viewabilityConfig = useMemo(
+      () => ({
+        itemVisiblePercentThreshold: 80,
+        waitForInteraction: false,
+        minimumViewTime: 100,
+      }),
+      []
+  );
+
+  const onViewableItemsChanged = useCallback((info) => {
+    // Only process if needed - avoid unnecessary state updates
+    // If you don't need this data in state, consider removing it
+    // setPostExtraData(info.viewableItems);
+  }, []);
+
+  // Memoized header buttons
+  const headerButtons = useMemo(() => (
+      <View style={styles.headerButtonsContainer}>
+        <VerticalAligner/>
+        <View style={styles.headerButtonsRow}>
+          <ButtonIcon
+              color={Styles.fontColor}
+              icon={faBell}
+              onPress={gotoPostsNotifications}
+          />
+          <ButtonIcon
+              color={Styles.fontColor}
+              icon={faSliders}
+              type="icon"
+              onPress={gotoPostSettings}
+          />
+        </View>
+        <VerticalAligner/>
+      </View>
+  ), [gotoPostsNotifications, gotoPostSettings]);
+
+  // Memoized search bar
+  const searchBar = useMemo(() => (
+      <FakeSearchBar
+          style={styles.searchBar}
+          onPress={gotoPostSearch}
+      />
+  ), [gotoPostSearch]);
+
+  return (
+      <View style={styles.container}>
+        <Animated.View style={[styles.headerContainer, headerAnimatedStyle]}>
+          <Header
+              title={LanguageSelector.getScreen('Posts')['title']}
+              sub={LanguageSelector.getScreen('Posts')['sub_title']}
+              bottomComponent={searchBar}
+              buttons={headerButtons}
+          />
+        </Animated.View>
+
+        <View style={[styles.listContainer, {marginBottom: Styles.insets.bottom + 60}]}>
+          <FlashList
+              ref={flatListRef}
+              data={SAMPLE_DATA}
+              renderItem={renderPostItem}
+              keyExtractor={keyExtractor}
+              onScroll={handleScroll}
+              scrollEventThrottle={16}
+              estimatedItemSize={50}
+              drawDistance={500}
+              viewabilityConfig={viewabilityConfig}
+              onViewableItemsChanged={onViewableItemsChanged}
+              onEndReached={onEndReached}
+              onEndReachedThreshold={0.5}
+              removeClippedSubviews={true}
+              showsVerticalScrollIndicator={false}
+              maxToRenderPerBatch={5}
+              windowSize={10}
+              initialNumToRender={5}
+              updateCellsBatchingPeriod={50}
+          />
+        </View>
+      </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    flexDirection: "column"
+  },
+  headerContainer: {
+    zIndex: 10,
+    position: "absolute",
+    width: "100%",
+    height: HEADER_HEIGHT
+  },
+  searchBar: {
+    marginHorizontal: 10
+  },
+  headerButtonsContainer: {
+    flexDirection: "column",
+    height: 50
+  },
+  headerButtonsRow: {
+    flexDirection: "row",
+    marginRight: 10,
+    gap: 10
+  },
+  listContainer: {
+    flex: 1,
+    backgroundColor: 'blue'
+  },
+  spacerItem: {
+    flex: 1,
+    height: HEADER_HEIGHT - 25,
+    backgroundColor: 'red',
+    marginVertical: 10
+  },
+  postItem: {
+    flex: 1,
+    height: 50,
+    backgroundColor: 'red',
+    marginVertical: 10
+  },
+  itemText: {
+    // Add text styles as needed
+  }
+});
+
+export default Posts;

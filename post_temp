@@ -1,0 +1,1255 @@
+import Styles from '../global/styles';
+import {
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  Animated as RNAnimated,
+  Easing
+} from 'react-native';
+import LanguageSelector from '../language/languageselector';
+import {
+  faBell,
+  faMagnifyingGlass,
+  faSliders,
+} from '@fortawesome/pro-regular-svg-icons';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import Variables from '../global/variables';
+import PostItem from './postitem';
+import Crypto from '../utils/crypto';
+import Time from '../utils/time';
+import {useFocusEffect, useNavigation} from '@react-navigation/native';
+import BottomSheetContainer from '../components/bottomsheetcontainer';
+import Flags from '../common/flags';
+import VerticalAligner from '../common/verticalaligner';
+import {FontAwesomeIcon} from '@fortawesome/react-native-fontawesome';
+import Storer from '../utils/storer';
+import {faAngleDown} from '@fortawesome/pro-solid-svg-icons';
+import {FlashList} from '@shopify/flash-list';
+import Reactions from '../common/reactions';
+import Ratings from '../common/ratings';
+import Share from '../common/share';
+import More from '../common/more';
+import Server from '../utils/server';
+import * as Keychain from 'react-native-keychain';
+import Button from "../common/button";
+import {hp} from "../common/dimensions";
+import Header from "../components/header";
+import FakeSearchBar from "../components/fakesearchbar";
+
+
+
+// Memoized components for better performance
+const MemoizedPostItem = React.memo(PostItem, (prevProps, nextProps) => {
+  return (
+      prevProps.item?.id === nextProps.item?.id &&
+      prevProps.item?.refresh_data === nextProps.item?.refresh_data &&
+      prevProps.videoActions?.paused === nextProps.videoActions?.paused &&
+      prevProps.videoActions?.muted === nextProps.videoActions?.muted &&
+      prevProps.index === nextProps.index &&
+      prevProps.isScrolling === nextProps.isScrolling
+  );
+});
+
+
+
+const Posts = props => {
+  const navigation = useNavigation();
+  const [posts, setPosts] = useState([]);
+  const [postExtraData, setPostExtraData] = useState([]);
+  const postRequestOffset = useRef({start: 0, offset: 5});
+  const postsAlreadyFetchRef = useRef(false);
+  const [bottomSheetArgs, setBottomSheetArgs] = useState({
+    ratings: null,
+    reactions: null,
+    content: null,
+    flags: null,
+    share: null,
+    more: null,
+    option: null,
+  });
+
+  const flatListRef = useRef(null);
+
+  // ✨ ADDED: Store carousel refs for gesture coordination
+  const carouselRefs = useRef({});
+
+  const [videoActions, setVideoActions] = useState({
+    paused: false,
+    muted: false,
+  });
+  const [refreshPostFromSocket, setRefreshPostFromSocket] = useState(null);
+  const [refreshPostOtherScreen, setRefreshPostOtherScreen] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isScrolling, setIsScrolling] = useState(false);
+
+  const scrolledRef = useRef(false);
+
+  // ✨ ADDED: Get all carousel refs as an array for waitFor
+  const getAllCarouselRefs = useCallback(() => {
+    return Object.values(carouselRefs.current).filter(Boolean);
+  }, []);
+
+  // Memoized viewable items set for O(1) lookup
+  const viewableItemsSet = useMemo(() => {
+    return new Set(postExtraData.map(item => item.item?.id).filter(Boolean));
+  }, [postExtraData]);
+
+  // Memoized bottom sheet close callback
+  const bottomSheetClose = useCallback(() => {
+    setBottomSheetArgs({
+      ratings: null,
+      reactions: null,
+      content: null,
+      flags: null,
+      share: null,
+      more: null,
+      option: null,
+    });
+  }, []);
+
+  const headerTranslateY = useRef(new RNAnimated.Value(0)).current;
+
+  const scrollY = useRef(new RNAnimated.Value(0)).current;
+
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+
+  // Refs for scroll handling
+  const scrollTimeoutRef = useRef(null);
+  const lastScrollYRef = useRef(0);
+  const isScrollingRef = useRef(false);
+
+  // Optimized socket refresh handler
+  const socketRefreshPost = async args => {
+    if (args.action === 'remove_deleted_post') {
+      setPosts(prevPosts => prevPosts.filter(item => item.id !== args.id));
+    } else if (args.action === 'follower_declined') {
+      for (let i = 0; i < posts.length; i++) {
+        if (posts[i].user === args.followed) {
+          posts[i].followed = 0;
+        }
+      }
+    } else if (args.action === 'post_new') {
+      const postDetailsParams = {
+        post: args.post,
+        user: Variables.userData.storer_id,
+      };
+
+      try {
+        const retPostDetailsNew = await Storer.sendData(
+            'post_details',
+            postDetailsParams,
+        );
+        const postDetailsNew = await processPosts(retPostDetailsNew[0]);
+        if (postDetailsNew && postDetailsNew.blocked !== 1) {
+          setPosts(prevPosts => [postDetailsNew, ...prevPosts]);
+        }
+      } catch (error) {
+        console.error('Error fetching new post details:', error);
+      }
+    } else {
+      const params = {
+        post: args.id,
+        user: Variables.userData.storer_id,
+      };
+
+      try {
+        const ret = await Storer.sendData('post_details', params);
+
+        const tempPost = await processPosts(ret[0]);
+
+        if (tempPost) {
+          if (args.action === 'add_new_post') {
+            if (tempPost && tempPost.blocked !== 1) {
+              setPosts(prevPosts => [tempPost, ...prevPosts]);
+            }
+          } else {
+            setPosts(prevPosts =>
+                prevPosts.map(item => (item.id === args.id ? tempPost : item)),
+            );
+          }
+        }
+      } catch (error) {
+        console.error('Error updating post:', error);
+      }
+    }
+  };
+
+  // Optimized screen refresh handler
+  const screenRefreshPost = useCallback(async args => {
+    const postDetailsParams = {
+      post: args.post,
+      user: Variables.userData.storer_id,
+    };
+
+    try {
+      if (args.type === 'post_new') {
+        const retPostDetailsNew = await Storer.sendData(
+            'post_details',
+            postDetailsParams,
+        );
+        const postDetailsNew = await processPosts(retPostDetailsNew[0]);
+
+        if (postDetailsNew && postDetailsNew.blocked !== 1) {
+          setPosts(prevPosts => [postDetailsNew, ...prevPosts]);
+        }
+      } else if (args.type === 'remove_deleted_post') {
+        setPosts(prevPosts => prevPosts.filter(item => item.id !== args.post));
+      } else if (args.type === 'messaging') {
+        const messagingChannelDetailsParams = {
+          messaging_channel: args.id,
+        };
+        const ret = await Server.sendData(
+            'messaging_channel_details',
+            messagingChannelDetailsParams,
+        );
+        navigation.navigate('Messaging', ret[0]);
+      } else if (args.type === 'block') {
+        setPosts(prevPosts =>
+            prevPosts.filter(item => item.user !== args.post),
+        );
+      } else if (args.type === 'refresh_posts_of_blocked') {
+        getPosts();
+      } else if (args.type === 'comments') {
+        setPosts(prevPosts =>
+            prevPosts.map(item =>
+                item.id === args.post
+                    ? {
+                      ...item,
+                      comment_count: args.comment_count,
+                      refresh_data: Date.now(),
+                    }
+                    : item,
+            ),
+        );
+      } else {
+        const retPostDetailsEdited = await Storer.sendData(
+            'post_details',
+            postDetailsParams,
+        );
+        const postDetailsEdited = await processPosts(retPostDetailsEdited[0]);
+
+        if (postDetailsEdited) {
+          setPosts(prevPosts =>
+              prevPosts.map(item =>
+                  item.id === args.post ? postDetailsEdited : item,
+              ),
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Error in screenRefreshPost:', error);
+    }
+  }, []);
+
+  // Optimized pause/mute function
+  const pauseMuteAll = useCallback(() => {
+    try {
+      let visiblePosts = [...postExtraData];
+
+      for (let i = 0; i < visiblePosts.length; i++) {
+        visiblePosts[i].item.videoActions = {
+          activeIndex: visiblePosts[i].item.videoActions.activeIndex,
+          paused: true,
+          muted: true,
+        };
+      }
+
+      setPostExtraData(visiblePosts);
+    } catch (e) {}
+  }, []);
+
+
+
+  // Memoized process posts function
+  const processPosts = async (storerRet) => {
+    if (!storerRet?.public_key) return null;
+
+    try {
+      const postStorer = {
+        content: storerRet.content,
+        public_flag: storerRet.public_flag.toString(),
+        layout: storerRet.layout.toString(),
+        user: storerRet.user,
+        datetime: storerRet.datetime,
+        shared: storerRet.shared,
+      };
+
+      const isPostVerified = await Crypto.verifyData(
+          postStorer,
+          storerRet.signature,
+          storerRet.public_key,
+      );
+
+      const postTitleDescriptionStorer = {
+        title: storerRet.title_description.title,
+        description: storerRet.title_description.description,
+        post: storerRet.storer_id,
+        datetime: storerRet.title_description.datetime,
+      };
+
+      const isPostTitleDescriptionVerified = await Crypto.verifyData(
+          postTitleDescriptionStorer,
+          storerRet.title_description.signature,
+          storerRet.public_key,
+      );
+
+      if (!isPostVerified || !isPostTitleDescriptionVerified) {
+        return null;
+      }
+
+      const canEditDelete = Crypto.verifySignature(
+          storerRet.hash,
+          storerRet.signature,
+          Variables.userKeyPair.publicKey,
+      );
+
+      let privateKey = null;
+
+      if (parseInt(storerRet.public_flag) === 0) {
+        privateKey = Variables.pxlKeyPair.privateKey;
+      } else if (parseInt(storerRet.public_flag) === 1) {
+        const jsonKey = JSON.parse(storerRet.key);
+        if (!jsonKey[Variables.userData.storer_id]) {
+          return null;
+        }
+        const followerMK = Crypto.decryptText(
+            Variables.userKeyPair.privateKey,
+            jsonKey[Variables.userData.storer_id],
+        );
+        const followerKeypair = Crypto.generateKeyPair(followerMK);
+        privateKey = followerKeypair.privateKey;
+      } else if (parseInt(storerRet.public_flag) === 2) {
+        return null;
+      }
+
+      const post = {
+        shared: storerRet.shared,
+        canEditDelete: canEditDelete,
+        id: storerRet.storer_id,
+        title: Crypto.decryptText(
+            privateKey,
+            storerRet.title_description.title,
+        ),
+        content: JSON.parse(Crypto.decryptText(privateKey, storerRet.content)),
+        content_sub: storerRet.content_sub,
+        description: Crypto.decryptText(
+            privateKey,
+            storerRet.title_description.description,
+        ),
+        nickname: storerRet.nickname,
+        profile_photo: storerRet.profile_photo,
+        datetime: Time.getTimeAgo(storerRet.datetime),
+        public_flag: storerRet.public_flag,
+        tags: storerRet.tags,
+        mentions: storerRet.mentions,
+        layout: storerRet.layout,
+        actions: {rate: false, reaction: false, details: false},
+        videoActions: {activeIndex: 0, paused: true, muted: true},
+        ratings: storerRet.average,
+        user_flag: parseInt(storerRet.user_flag),
+        user_flag_id: storerRet.user_flag_id,
+        user_flag_counter: parseInt(storerRet.user_flag_counter),
+        user_flag_counter_id: storerRet.user_flag_counter_id,
+        user_rate:
+            storerRet.user_rate === 0 ? 0 : JSON.parse(storerRet.user_rate),
+        user_reaction:
+            storerRet.user_reaction === 0
+                ? 0
+                : JSON.parse(storerRet.user_reaction),
+        flag_count: parseInt(storerRet.flag_count),
+        flag_count_counter: parseInt(storerRet.flag_count_counter),
+        comment_count: parseInt(storerRet.comment_count),
+        commented: storerRet.commented,
+        reaction_count: parseInt(storerRet.reaction_count),
+        live_status: storerRet.live_status,
+        user: storerRet.user,
+        followed: storerRet.followed,
+        follow_storer_id: storerRet.follow_storer_id,
+        bookmarked: storerRet.bookmarked,
+        blocked: storerRet.blocked,
+        hidden: storerRet.hidden,
+        post_notification: storerRet.post_notification,
+        viewable: false,
+        refresh_data: Date.now(), // Use timestamp for unique refresh identifier
+      };
+
+      return post;
+    } catch (error) {
+      console.error('Error processing post:', error);
+      return null;
+    }
+  }
+
+  // Optimized getPosts function with error handling
+  const getPosts = async () => {
+    if (isLoading) return;
+
+    setIsLoading(true);
+    props.parentActions('refresh_posts', true);
+
+    try {
+      const params = {
+        start: postRequestOffset.current.start,
+        offset: postRequestOffset.current.offset,
+        user: Variables.userData.storer_id,
+      };
+
+      const ret = await Storer.sendData('get_posts', params);
+console.log(ret[0])
+      const tempPosts = [];
+
+      // Process posts in parallel for better performance
+      const postPromises = ret.map(item => processPosts(item));
+      const processedPosts = await Promise.all(postPromises);
+
+      processedPosts.forEach(post => {
+        if (post && post.blocked !== 1) {
+          tempPosts.push(post);
+        }
+      });
+
+      setPosts(prevPosts => [...prevPosts, ...tempPosts]);
+      postsAlreadyFetchRef.current = true;
+    } catch (error) {
+      console.error('Error fetching posts:', error);
+    } finally {
+      setIsLoading(false);
+      props.parentActions('refresh_posts', false);
+    }
+  }
+
+  // Optimized actions handler with useCallback
+  const actions = (name, args) => {
+    switch (name) {
+      case 'show_user_profile':
+        props.parentActions('show_user_profile', {user: args});
+        break;
+
+      case 'block':
+        setPosts(prevPosts => prevPosts.filter(item => item.user !== args));
+        break;
+
+      case 'follow':
+        for (let i = 0; i < posts.length; i++) {
+          if (posts[i].user === args) {
+            posts[i].followed = posts[i].followed === 0 ? 1 : 0;
+          }
+        }
+
+        break;
+
+      case 'post_notification':
+        setPosts(prevPosts =>
+            prevPosts.map(item =>
+                item.id === args
+                    ? {
+                      ...item,
+                      post_notification: item.post_notification === 0 ? 1 : 0,
+                    }
+                    : item,
+            ),
+        );
+        break;
+
+      case 'hide':
+        setPosts(prevPosts =>
+            prevPosts.map(item =>
+                item.id === args
+                    ? {
+                      ...item,
+                      hidden: item.hidden === 0 ? 1 : 0,
+                    }
+                    : item,
+            ),
+        );
+        break;
+
+      case 'remove_deleted_post':
+        setPosts(prevPosts => prevPosts.filter(item => item.id !== args));
+        break;
+
+      case 'mute':
+        setVideoActions(prev => ({paused: prev.paused, muted: !prev.muted}));
+        break;
+
+      case 'pause':
+        setVideoActions(prev => ({paused: !prev.paused, muted: prev.muted}));
+        break;
+
+      case 'edit_post':
+        const optionArgs = bottomSheetArgs.more;
+        bottomSheetClose();
+        setTimeout(() => {
+          navigation.navigate('CreatePost', optionArgs);
+        }, 100); // Reduced timeout for better UX
+        break;
+
+      case 'show_reactions':
+        setBottomSheetArgs(prev => ({
+          ...prev,
+          reactions: posts[args.index],
+          ratings: null,
+          content: null,
+          flags: null,
+          share: null,
+          more: null,
+        }));
+        break;
+
+      case 'show_ratings':
+        setBottomSheetArgs(prev => ({
+          ...prev,
+          ratings: posts[args.index],
+          reactions: null,
+          content: null,
+          flags: null,
+          share: null,
+          more: null,
+        }));
+        break;
+
+      case 'show_more':
+        setBottomSheetArgs(prev => ({
+          ...prev,
+          more: args,
+          ratings: null,
+          reactions: null,
+          content: null,
+          flags: null,
+          share: null,
+        }));
+        break;
+
+      case 'show_share':
+        setBottomSheetArgs(prev => ({
+          ...prev,
+          share: posts[args.index],
+          ratings: null,
+          reactions: null,
+          content: null,
+          flags: null,
+          more: null,
+        }));
+        break;
+
+      case 'show_flags':
+        setBottomSheetArgs(prev => ({
+          ...prev,
+          flags: {index: args.index, post: args.data.post},
+          ratings: null,
+          reactions: null,
+          content: null,
+          share: null,
+          more: null,
+        }));
+        break;
+
+      case 'show_post_details':
+        props.parentActions('show_post_details', {
+          ...args,
+          postLastIndex: posts.length,
+        });
+        break;
+
+      case 'show_live_details':
+        props.parentActions('show_live_details', args);
+        break;
+
+      case 'show_create_content':
+        setBottomSheetArgs(prev => ({
+          ...prev,
+          content: {},
+          ratings: null,
+          reactions: null,
+          flags: null,
+          share: null,
+          more: null,
+        }));
+        break;
+
+      case 'show_create_post':
+        bottomSheetClose();
+        props.parentActions('show_create_post', {});
+        break;
+
+      case 'show_create_live':
+        bottomSheetClose();
+        props.parentActions('show_create_live', {});
+        break;
+
+      default:
+        console.warn(`Unknown action: ${name}`);
+    }
+  }
+
+  // Optimized viewable items changed handler
+  const onViewableItemsChanged = info => {
+    setPostExtraData(info.viewableItems);
+  }
+
+  // Memoized viewability config
+  const viewabilityConfig = useMemo(
+      () => ({
+        itemVisiblePercentThreshold: 80,
+        waitForInteraction: false,
+      }),
+      [],
+  );
+
+  // ✨ MODIFIED: Optimized render item function with carousel ref management
+  const renderPostItem = useCallback(
+      props => {
+        if (!props.item) return null;
+
+        const isVisible = viewableItemsSet.has(props.item.id);
+
+        // ✨ ADDED: Check if this post has a carousel (multiple photos/videos)
+        const hasCarousel = props.item?.content?.length > 1;
+
+        let renderVideoActions = {
+          activeIndex: props.item.activeIndex,
+          paused: true,
+          muted: true,
+        };
+
+        if (props.index === 0) {
+          if (scrolledRef.current) {
+            renderVideoActions = isVisible
+                ? {
+                  activeIndex: props.item.activeIndex,
+                  paused: videoActions.paused,
+                  muted: videoActions.muted,
+                }
+                : {activeIndex: props.item.activeIndex, paused: true, muted: true};
+          }
+        } else {
+          renderVideoActions = isVisible
+              ? {
+                activeIndex: props.item.activeIndex,
+                paused: videoActions.paused,
+                muted: videoActions.muted,
+              }
+              : {activeIndex: props.item.activeIndex, paused: true, muted: true};
+        }
+
+        return (
+            <MemoizedPostItem
+                // ✨ ADDED: Store ref if post has carousel
+                ref={(ref) => {
+                  if (hasCarousel) {
+                    carouselRefs.current[props.item.id] = ref;
+                  } else {
+                    // Clean up ref if post doesn't have carousel
+                    delete carouselRefs.current[props.item.id];
+                  }
+                }}
+                isDraft={false}
+                index={props.index}
+                item={props.item}
+                actions={actions}
+                style={Styles.postItemStyles}
+                refreshPostsRatings={refreshPostsRatings}
+                refreshPostsReactions={refreshPostsReactions}
+                videoActions={renderVideoActions}
+                isScrolling={isScrolling}
+            />
+        );
+      },
+      [posts, isScrolling, viewableItemsSet],
+  );
+
+  // Optimized refresh functions
+  const refreshPostsRatings = useCallback(async (postId, rateArgs) => {
+    try {
+      const params = {post: postId};
+      const ratingAverage = await Storer.sendData('ratings_average', params);
+
+      const userRate = {
+        rate: rateArgs.value,
+        hash: rateArgs.hash,
+        signature: rateArgs.signature,
+        datetime: rateArgs.datetime,
+        status: rateArgs.status,
+        storer_id: rateArgs.storer_id,
+        parent_storer_id: rateArgs.rating,
+      };
+
+      setPosts(prevPosts =>
+          prevPosts.map(item =>
+              item.id === postId
+                  ? {
+                    ...item,
+                    user_rate: userRate,
+                    ratings: ratingAverage,
+                    refresh_data: Date.now(),
+                  }
+                  : item,
+          ),
+      );
+    } catch (error) {
+      console.error('Error refreshing post ratings:', error);
+    }
+  }, []);
+
+  const refreshPostsReactions = useCallback((postId, reactionArgs) => {
+    setPosts(prevPosts =>
+        prevPosts.map(item => {
+          if (item.id !== postId) return item;
+
+          const hadReactionBefore = item.user_reaction !== 0;
+          const hasReactionNow = reactionArgs.value !== 0;
+
+          let countChange = 0;
+          if (!hadReactionBefore && hasReactionNow) {
+            countChange = 1;
+          } else if (hadReactionBefore && !hasReactionNow) {
+            countChange = -1;
+          }
+
+          const userReaction =
+              reactionArgs.value !== 0
+                  ? {
+                    reaction: reactionArgs.value,
+                    hash: reactionArgs.hash,
+                    signature: reactionArgs.signature,
+                    datetime: reactionArgs.datetime,
+                    status: reactionArgs.status,
+                    storer_id: reactionArgs.storer_id,
+                    parent_storer_id: reactionArgs.reaction,
+                  }
+                  : 0;
+
+          return {
+            ...item,
+            user_reaction: userReaction,
+            reaction_count: item.reaction_count + countChange,
+            refresh_data: Date.now(),
+          };
+        }),
+    );
+  }, []);
+
+  const refreshPostFlags = useCallback((flagId, postId, flag, type) => {
+    setPosts(prevPosts =>
+        prevPosts.map(item => {
+          if (item.id !== postId) return item;
+
+          let updates = {refresh_data: Date.now()};
+
+          switch (type) {
+            case 'add':
+              updates = {
+                ...updates,
+                user_flag: parseInt(flag),
+                flag_count: parseInt(item.flag_count) + 1,
+              };
+              break;
+            case 'remove':
+              updates = {
+                ...updates,
+                user_flag: 0,
+                flag_count: parseInt(item.flag_count) - 1,
+              };
+              break;
+            case 'counter':
+              updates = {
+                ...updates,
+                user_flag_counter: parseInt(flag),
+                flag_count_counter: parseInt(item.flag_count_counter) + 1,
+              };
+              break;
+            case 'remove_counter':
+              updates = {
+                ...updates,
+                user_flag_counter: 0,
+                flag_count_counter: parseInt(item.flag_count_counter) - 1,
+              };
+              break;
+          }
+
+          return {...item, ...updates};
+        }),
+    );
+  }, []);
+
+  // Optimized pagination handler
+  const onEndReached = () => {
+    if (postsAlreadyFetchRef.current && !isLoading) {
+      postsAlreadyFetchRef.current = false;
+      postRequestOffset.current.start += postRequestOffset.current.offset;
+      getPosts();
+    }
+  }
+
+  // Navigation handlers
+  const gotoPostSearch = () => {
+
+    navigation.navigate('PostSearch');
+
+
+  }
+
+  const gotoPostSettings = () => {
+    navigation.navigate('PostSettings');
+  }
+
+  // Use effects with proper dependencies
+  useFocusEffect(
+      React.useCallback(() => {
+        const handleFocus = async () => {
+          if (Variables.screenData) {
+            const screenData = Variables.screenData;
+            if (screenData.type === 'block' || 'post_new') {
+              setPosts(prev =>
+                  prev.filter(post => post.user !== screenData.user),
+              );
+              postRequestOffset.current.start = 0;
+              setPosts([]);
+              await getPosts();
+            } else {
+              setRefreshPostOtherScreen(screenData);
+            }
+            //Variables.screenData = null;
+          }
+        };
+        handleFocus();
+
+        return () => {
+          pauseMuteAll();
+        };
+      }, []),
+  );
+
+  useEffect(() => {
+    if (refreshPostFromSocket) {
+      socketRefreshPost(refreshPostFromSocket);
+    }
+  }, [refreshPostFromSocket]);
+
+  useEffect(() => {
+    if (refreshPostOtherScreen) {
+      screenRefreshPost(refreshPostOtherScreen);
+    }
+  }, [refreshPostOtherScreen, screenRefreshPost]);
+
+  useEffect(() => {
+    const initializeComponent = async () => {
+      Server.waitFor('broadcast_update_post', res => {
+        setRefreshPostFromSocket(res);
+      });
+
+      Server.waitFor('broadcast_update_flag', res => {
+        setPosts(prevPosts =>
+            prevPosts.map(post => {
+              if (post.id !== res.id) return post;
+
+              let updates = {refresh_data: Date.now()};
+
+              if (res.flag_count !== undefined) {
+                updates.flag_count = res.flag_count;
+              }
+              if (res.flag_count_counter !== undefined) {
+                updates.flag_count_counter = res.flag_count_counter;
+              }
+
+              if (res.user === Variables.userData.storer_id) {
+                switch (res.flag_type) {
+                  case 'add':
+                    updates.user_flag = res.flag_value;
+                    break;
+                  case 'remove':
+                    updates.user_flag = 0;
+                    break;
+                  case 'counter':
+                    updates.user_flag_counter = res.flag_value;
+                    break;
+                  case 'remove_counter':
+                    updates.user_flag_counter = 0;
+                    break;
+                }
+              }
+
+              return {...post, ...updates};
+            })
+        );
+      });
+
+      Server.waitFor('follower_accepted', res => {
+        setRefreshPostFromSocket(res);
+      });
+
+      try {
+        const kcData = await Keychain.getGenericPassword();
+        const userData = JSON.parse(kcData.username);
+
+        if (userData.has_live) {
+          const params = {
+            post: userData.has_live,
+            user: Variables.userData.storer_id,
+          };
+
+          const ret = await Storer.sendData('post_details', params);
+
+          const tempPost = await processPosts(ret[0]);
+
+          if (tempPost) {
+            props.parentActions('continue_live_details', tempPost);
+          }
+        }
+      } catch (error) {
+        console.error('Error initializing component:', error);
+      }
+
+      if (!postsAlreadyFetchRef.current) {
+        getPosts();
+      }
+    };
+
+    initializeComponent();
+
+    // Cleanup function
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const onScroll = (event) => {
+    const currentScrollY = event.nativeEvent.contentOffset.y;
+    const scrollDifference = currentScrollY - lastScrollYRef.current;
+
+    setIsScrolling(true);
+
+    // Only handle header animation if scroll difference is significant (more than 2 pixels)
+    if (Math.abs(scrollDifference) < 2) {
+      return;
+    }
+
+    const HEADER_HEIGHT = 120 + Styles.insets.top;
+
+    // Scrolling down - hide header
+    if (scrollDifference > 0 && currentScrollY > HEADER_HEIGHT) {
+      if (isHeaderVisible) {
+        setIsHeaderVisible(false);
+      }
+      RNAnimated.timing(headerTranslateY, {
+        toValue: -HEADER_HEIGHT,
+        duration: 250,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+    }
+    // Scrolling up - show header
+    else if (scrollDifference < 0) {
+      if (!isHeaderVisible) {
+        setIsHeaderVisible(true);
+      }
+      RNAnimated.timing(headerTranslateY, {
+        toValue: 0,
+        duration: 250,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+    }
+
+    lastScrollYRef.current = currentScrollY;
+  };
+
+  const handleScrollBeginDrag = () => {
+    setIsScrolling(true);
+  };
+
+  const handleScrollEndDrag = () => {
+    // Use a small delay to ensure smooth animation
+    setTimeout(() => {
+      setIsScrolling(false);
+    }, 100);
+  };
+
+  return (
+      <View style={styles.container}>
+        <StatusBar
+            backgroundColor={Styles.backgroundColor}
+            barStyle="dark-content"
+        />
+
+        <RNAnimated.View
+            style={[
+              styles.header_container,
+              {
+                transform: [{ translateY: headerTranslateY }],
+              },
+            ]}
+        >
+
+          <Header styles={{height:120}} title={LanguageSelector.getText('your_feeds')} sub={LanguageSelector.getText('your_feeds_sub')} bottomComponent={
+
+            <FakeSearchBar style={{marginHorizontal:10}} onPress={gotoPostSearch}/>
+
+          } buttons={
+
+            <View style={{flexDirection:"row"}}>
+
+              <Button color={Styles.fontColor} size={20} icon={faBell} type={"icon"} onPress={gotoPostSettings} style={{marginRight:20}}/>
+
+              <Button color={Styles.fontColor} size={20} icon={faSliders} type={"icon"} onPress={gotoPostSettings} style={{marginRight:10}}/>
+
+            </View>
+
+          }/>
+
+
+        </RNAnimated.View>
+
+        <View style={[
+          styles.flashlist_container,
+          {
+            height: Styles.deviceHeight - (Styles.insets.bottom + 65),
+            top: 0,
+          }
+        ]}>
+          <FlashList
+              onScroll={onScroll}
+              disableIntervalMomentum={true}
+              scrollEventThrottle={16}
+              onScrollBeginDrag={handleScrollBeginDrag}
+              onScrollEndDrag={handleScrollEndDrag}
+              estimatedItemSize={500}
+              drawDistance={500}
+              viewabilityConfig={viewabilityConfig}
+              onViewableItemsChanged={onViewableItemsChanged}
+              ref={flatListRef}
+              onEndReached={onEndReached}
+              onEndReachedThreshold={0.5}
+              extraData={[postExtraData, isScrolling]}
+              removeClippedSubviews={true}
+              showsVerticalScrollIndicator={false}
+              data={posts}
+              renderItem={renderPostItem}
+              keyExtractor={item => item.id.toString()}
+              getItemType={() => 'post'}
+              maxToRenderPerBatch={5}
+              windowSize={10}
+              initialNumToRender={3}
+              contentContainerStyle={{
+                paddingTop: 120 + Styles.insets.top,
+              }}
+              waitFor={getAllCarouselRefs()}  // ✨ ADDED: Wait for carousel gestures!
+          />
+        </View>
+
+
+
+        {/* Ratings Bottom Sheet */}
+        <BottomSheetContainer
+            enablePanDownToClose={true}
+            open={bottomSheetArgs.ratings != null}
+            closeCallback={bottomSheetClose}>
+          <View style={styles.flex1}>
+            <VerticalAligner />
+            <FontAwesomeIcon
+                icon={faAngleDown}
+                size={30}
+                style={styles.bottom_sheet_icon}
+                color={Styles.whiteColor}
+            />
+            <View style={Styles.bottomsheet.bottomsheet_content_container}>
+
+              <View style={Styles.bottomsheet.bottomsheet_header_title_container}>
+                <Text style={Styles.bottomsheet.bottomsheet_header_title}>
+                  {LanguageSelector.getText('post_ratings_title')}
+                </Text>
+              </View>
+
+              {bottomSheetArgs.ratings && (
+                  <Ratings item={bottomSheetArgs.ratings} />
+              )}
+            </View>
+
+            <View style={{marginBottom:Styles.insets.bottom + 60}}/>
+
+          </View>
+        </BottomSheetContainer>
+
+        {/* Reactions Bottom Sheet */}
+        <BottomSheetContainer
+            enablePanDownToClose={true}
+            open={bottomSheetArgs.reactions != null}
+            closeCallback={bottomSheetClose}>
+          <View style={styles.flex1}>
+            <VerticalAligner />
+            <FontAwesomeIcon
+                icon={faAngleDown}
+                size={30}
+                style={styles.bottom_sheet_icon}
+                color={Styles.whiteColor}
+            />
+            <View style={Styles.bottomsheet.bottomsheet_content_container}>
+
+              <View style={Styles.bottomsheet.bottomsheet_header_title_container}>
+                <Text style={Styles.bottomsheet.bottomsheet_header_title}>
+                  {LanguageSelector.getText('post_reactions_title')}
+                </Text>
+              </View>
+
+              {bottomSheetArgs.reactions && (
+                  <Reactions item={bottomSheetArgs.reactions} />
+              )}
+
+            </View>
+
+            <View style={{marginBottom:Styles.insets.bottom + 60}}/>
+          </View>
+        </BottomSheetContainer>
+
+        {/* Flags Bottom Sheet */}
+        <BottomSheetContainer
+            enablePanDownToClose={true}
+            open={bottomSheetArgs.flags != null}
+            closeCallback={bottomSheetClose}>
+          <View style={styles.flex1}>
+            <VerticalAligner />
+            <FontAwesomeIcon
+                icon={faAngleDown}
+                size={30}
+                style={styles.bottom_sheet_icon}
+                color={Styles.whiteColor}
+            />
+
+            <View style={Styles.bottomsheet.bottomsheet_content_container}>
+
+              <View style={Styles.bottomsheet.bottomsheet_header_title_container}>
+                <Text style={Styles.bottomsheet.bottomsheet_header_title}>
+                  {LanguageSelector.getText('post_flag_title')}
+                </Text>
+              </View>
+
+              {bottomSheetArgs.flags && (
+                  <Flags
+                      style={styles}
+                      postIndex={bottomSheetArgs.flags.index}
+                      item={bottomSheetArgs.flags.post}
+                      refreshPostsFlags={refreshPostFlags}
+                      close={bottomSheetClose}
+                      onFlagUpdate={(updatedFlags) => {
+                        setPosts(prevPosts =>
+                            prevPosts.map(post =>
+                                post.id === bottomSheetArgs.flags.post.id
+                                    ? {...post, ...updatedFlags, refresh_data: Date.now()}
+                                    : post
+                            )
+                        );
+                        setPostExtraData(prev => [...prev]);
+                      }}
+                  />
+              )}
+            </View>
+            <View style={{marginBottom:Styles.insets.bottom + 60}}/>
+          </View>
+        </BottomSheetContainer>
+
+        {/* Share Bottom Sheet */}
+        <BottomSheetContainer
+            enablePanDownToClose={true}
+            open={bottomSheetArgs.share != null}
+            closeCallback={bottomSheetClose}>
+          <View style={styles.flex1}>
+            <VerticalAligner />
+            <FontAwesomeIcon
+                icon={faAngleDown}
+                size={30}
+                style={styles.bottom_sheet_icon}
+                color={Styles.whiteColor}
+            />
+            <View style={Styles.bottomsheet.bottomsheet_content_container}>
+              {bottomSheetArgs.share && (
+                  <Share item={bottomSheetArgs.share} close={bottomSheetClose} />
+              )}
+
+            </View>
+          </View>
+        </BottomSheetContainer>
+
+        {/* More Bottom Sheet */}
+        <BottomSheetContainer
+            enablePanDownToClose={true}
+            open={bottomSheetArgs.more != null}
+            closeCallback={bottomSheetClose}>
+          <View style={styles.flex1}>
+            <VerticalAligner />
+            <FontAwesomeIcon
+                icon={faAngleDown}
+                size={30}
+                style={styles.bottom_sheet_icon}
+                color={Styles.whiteColor}
+            />
+            <View style={Styles.bottomsheet.bottomsheet_content_container}>
+
+              <View style={Styles.bottomsheet.bottomsheet_header_title_container}>
+                <Text style={Styles.bottomsheet.bottomsheet_header_title}>
+                  {LanguageSelector.getText('post_more_title')}
+                </Text>
+              </View>
+
+              {bottomSheetArgs.more && (
+                  <More
+                      actions={actions}
+                      item={bottomSheetArgs.more}
+                      close={bottomSheetClose}
+                  />
+              )}
+            </View>
+            <View style={{marginBottom:Styles.insets.bottom + 60}}/>
+          </View>
+        </BottomSheetContainer>
+
+
+
+      </View>
+  );
+};
+
+// Memoized styles outside component to prevent recreation
+const styles = StyleSheet.create({
+  flex1: {
+    flex: 1,
+  },
+  container: {
+    flex: 1,
+    backgroundColor: Styles.whiteColor,
+  },
+  header_container: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1000,
+    backgroundColor: Styles.backgroundColor,
+  },
+  fake_search_bar: {
+    backgroundColor: "#F8F9FA",
+    height: 50,
+    width: Styles.deviceWidth - 20,
+    marginLeft: 10,
+    marginBottom: 10,
+    marginTop: 10,
+    borderRadius: 100,
+  },
+  flashlist_container: {
+    position: "absolute",
+    width: "100%",
+    left: 0,
+    top: 0,
+    backgroundColor: Styles.whiteColor,
+  },
+  bottom_sheet_icon: {
+    alignSelf: 'center',
+  },
+});
+
+
+
+export default Posts;

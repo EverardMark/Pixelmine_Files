@@ -1,0 +1,1063 @@
+import React, {
+  useRef,
+  useState,
+  memo,
+  useMemo,
+  useEffect,
+  useCallback,
+  forwardRef,        // ← ADDED
+  useImperativeHandle, // ← ADDED
+} from 'react';
+import {
+  Text,
+  View,
+  Image,
+  Pressable,
+  ScrollView,
+  Linking,
+  TouchableWithoutFeedback,
+  Animated,
+} from 'react-native';
+import {FontAwesomeIcon} from '@fortawesome/react-native-fontawesome';
+import {
+  faComments,
+  faEyeSlash,
+  faFlag,
+  faShare,
+  faSmile,
+  faTag,
+  faUser,
+  faStar,
+  faUsers,
+  faEllipsis,
+  faGlobeAfrica,
+} from '@fortawesome/pro-regular-svg-icons';
+// for fill colored star
+// import {
+//   faStar,
+// } from '@fortawesome/free-solid-svg-icons';
+import {faCircle} from '@fortawesome/pro-duotone-svg-icons';
+
+import Carousel from "../components/carousel"
+import Video from 'react-native-video';
+import Hyperlink from 'react-native-hyperlink';
+import ReactNativeHapticFeedback from 'react-native-haptic-feedback/src';
+
+import Styles from '../global/styles';
+import Variables from '../global/variables';
+import VerticalAligner from '../common/verticalaligner';
+import PhotoVideo from './photovideo';
+import Rate from '../common/rate';
+import Reaction from '../common/reaction';
+import PanGestureContainer from '../common/pangesturecontainer';
+import { wp,hp } from '../common/dimensions';
+import {Directions, Gesture, GestureDetector, GestureHandlerRootView} from 'react-native-gesture-handler';
+import {Bubbles} from "lucide-react-native";
+import Button from "../common/button";
+import {Direction} from "react-native-gesture-handler/lib/typescript/web_hammer/constants";
+
+// Constants
+const REACTION_EMOJIS = {
+  1: '😂',
+  2: '😢',
+  3: '😠',
+  4: '❤️',
+  5: '👍',
+};
+
+const PUBLIC_FLAGS = {
+  0: 'Public',
+  1: 'Follower',
+  2: 'Private',
+};
+
+// ← CHANGED: Wrapped with forwardRef
+const PostItem = memo(forwardRef((props, ref) => {
+  // State
+  const [photosVideos, setPhotosVideos] = useState([]);
+  const [carouselIndex, setCarouselIndex] = useState(0);
+  const [executeRate, setExecuteRate] = useState(false);
+  const [executeDeleteRate, setExecuteDeleteRate] = useState(false);
+  const [executeReact, setExecuteReact] = useState(false);
+  const [executeDeleteReact, setExecuteDeleteReact] = useState(false);
+  const [ratePannedItem, setRatePannedItem] = useState(0);
+  const [reactPannedItem, setReactPannedItem] = useState(0);
+
+  // Refs
+  const ifRateReactionRef = useRef('');
+  const componentRef = useRef(null);
+  const panningRef = useRef(false);
+  const carouselRef = useRef(null); // ← ADDED
+
+  // ← ADDED: Expose carousel ref to parent component
+  useImperativeHandle(ref, () => carouselRef.current);
+
+  // Memoized values
+  const controlsContainerWidth = useMemo(
+      () => Styles.deviceWidth - Styles.deviceWidth / 5,
+      [],
+  );
+  const controlsContainerItemWidth = useMemo(
+      () => controlsContainerWidth / 5,
+      [controlsContainerWidth],
+  );
+
+  // Animated values - starting from right side of screen
+  const rateContainerRight = useRef(new Animated.Value(Styles.deviceWidth)).current;
+  const reactContainerRight = useRef(new Animated.Value(Styles.deviceWidth)).current;
+
+  // Memoized computed values
+  const isSharedPost = useMemo(
+      () => props.item?.shared === 1,
+      [props.item?.shared],
+  );
+  const isHidden = useMemo(
+      () => props.item?.hidden !== 0,
+      [props.item?.hidden],
+  );
+  const hasContent = useMemo(
+      () => props.item?.content?.length > 0,
+      [props.item?.content],
+  );
+  const hasTags = useMemo(
+      () => props.item?.tags?.length > 0,
+      [props.item?.tags],
+  );
+  const hasMentions = useMemo(
+      () => props.item?.mentions?.length > 0,
+      [props.item?.mentions],
+  );
+  const hasDescription = useMemo(
+      () => props.item?.description && props.item.description !== '',
+      [props.item?.description],
+  );
+  const isLive = useMemo(
+      () => props.item?.live_status !== 0,
+      [props.item?.live_status],
+  );
+
+  const hasMedia = useMemo(
+      () => hasContent || isLive,
+      [hasContent, isLive],
+  );
+  const [reactionX, setReactionX] = useState(0);
+  const [textX, setTextX] = useState(0);
+
+  const startX = Math.min(reactionX, textX);
+  const lineLength = Math.abs(textX - reactionX);
+
+  // Hide Rate and React containers when scrolling
+  useEffect(() => {
+    if (props.isScrolling) {
+      // Hide both containers immediately when scrolling starts
+      Animated.timing(rateContainerRight, {
+        toValue: Styles.deviceWidth,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+
+      Animated.timing(reactContainerRight, {
+        toValue: Styles.deviceWidth,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [props.isScrolling, rateContainerRight, reactContainerRight]);
+
+  const decodedTitle = useMemo(
+      () => (props.item?.title ? decodeURIComponent(props.item.title) : ''),
+      [props.item?.title],
+  );
+
+  const decodedDescription = useMemo(
+      () =>
+          props.item?.description ? decodeURIComponent(props.item.description) : '',
+      [props.item?.description],
+  );
+
+  const totalRatings = useMemo(() => {
+    if (!props.item?.ratings?.data) return 0;
+    const {
+      five = 0,
+      four = 0,
+      three = 0,
+      two = 0,
+      one = 0,
+    } = props.item.ratings.data;
+    return five + four + three + two + one;
+  }, [props.item?.ratings?.data]);
+
+  const userReactionEmoji = useMemo(() => {
+    if (!props.item?.user_reaction?.reaction) return null;
+    return REACTION_EMOJIS[parseInt(props.item.user_reaction.reaction)] || null;
+  }, [props.item?.user_reaction?.reaction]);
+
+  // Memoized styles
+  const sharedPostContainerStyle = useMemo(
+      () => ({
+        ...props.style.shared_post_container,
+        margin: isSharedPost ? 20 : 0,
+        backgroundColor: isSharedPost
+            ? Styles.backgroundColor
+            : Styles.whiteColor,
+        borderRadius: isSharedPost ? 10 : 0,
+      }),
+      [isSharedPost],
+  );
+
+  const containerChildStyle = useMemo(
+      () => [props.style.container_child, {marginTop: isSharedPost ? 0 : 0}],
+      [isSharedPost, props.style.container_child],
+  );
+
+  // Utility functions
+  const getPrivateKey = useCallback(() => {
+    const {public_flag} = props.item;
+    if (public_flag === 0 || public_flag === 3) return Variables.pxlKeyPair.privateKey;
+    if (public_flag === 1 || public_flag === 2)
+      return Variables.userKeyPair.privateKey;
+    return null;
+  }, [props.item?.public_flag]);
+
+
+
+  const ratePanGesture = Gesture.Fling()
+      .runOnJS(true)
+      .onStart((event) => {
+
+        Animated.timing(rateContainerRight, {
+          toValue: 0, // Animate to center (visible position)
+          duration: 300,
+          useNativeDriver: true,
+        }).start();
+
+      })
+      .onEnd((event) => {
+        Animated.timing(rateContainerRight, {
+          toValue: Styles.deviceWidth, // Animate back to right (off-screen)
+          duration: 300,
+          useNativeDriver: true,
+        }).start();
+      })
+
+
+  const reactPanGesture = Gesture.Fling()
+      .runOnJS(true)
+      .onStart((event) => {
+
+        Animated.timing(reactContainerRight, {
+          toValue: 0, // Animate to center (visible position)
+          duration: 300,
+          useNativeDriver: true,
+        }).start();
+
+      })
+      .onEnd((event) => {
+        Animated.timing(reactContainerRight, {
+          toValue: Styles.deviceWidth, // Animate back to right (off-screen)
+          duration: 300,
+          useNativeDriver: true,
+        }).start();
+      })
+
+
+  const downloadFiles = useCallback(() => {
+    try {
+      const privateKey = getPrivateKey();
+      const content = isSharedPost
+          ? props.item.content.content
+          : props.item.content;
+
+      const photosVideos =
+          content?.map(item => ({
+            file: item.filename,
+            height: item.height,
+            width: item.width,
+            type: item.type,
+            preview: item.preview_filename,
+            thumbnail: item.thumbnail,
+            privateKey,
+          })) || [];
+
+      setPhotosVideos(photosVideos);
+    } catch (error) {
+      console.error('Error downloading files:', error);
+    }
+  }, [props.item?.content, isSharedPost, getPrivateKey]);
+
+  // Effects
+  useEffect(() => {
+    if (props.item?.id) {
+      setCarouselIndex(0);
+      downloadFiles();
+    }
+  }, [props.item?.id, props.item?.content, downloadFiles]);
+
+  // Event handlers
+  const actions = useCallback(
+      (name, args) => {
+        const actionMap = {
+          show_post_draft: () => props.actions('show_post_draft', props.item),
+          show_user_profile: () =>
+              props.actions('show_user_profile', props.item.user),
+          show_live_details: () => {
+            const argsLiveDetails = {
+              index: props.index,
+              post: props.item,
+              photosVideos,
+              showComments: false,
+              dimension: {x: 0, y: 0, width: 0, height: 0},
+            };
+            props.actions(name, argsLiveDetails);
+          },
+          pause: () => props.actions(name, args),
+          mute: () => {}, // No operation
+          show_post_details: () => {
+            const argsPostDetails = {
+              index: props.index,
+              post: props.item,
+              photosVideos,
+              showComments: false,
+              dimension: {x: 0, y: 0, width: 0, height: 0},
+            };
+            props.actions(name, argsPostDetails);
+          },
+          show_reactions: () => props.actions(name, {index: props.index}),
+          show_ratings: () => props.actions(name, {index: props.index}),
+          show_reaction: () => {
+            ifRateReactionRef.current = 'reaction';
+
+            ReactNativeHapticFeedback.trigger(
+                'impactLight',
+                Variables.hapticOption,
+            );
+
+            Animated.timing(rateContainerRight, {
+              toValue: Styles.deviceWidth,
+              duration: 300,
+              useNativeDriver: true,
+            }).start();
+
+            // Animate from left to center with smooth timing
+            Animated.timing(reactContainerRight, {
+              toValue: 0,
+              duration: 300,
+              useNativeDriver: true,
+            }).start();
+          },
+          show_rate: () => {
+
+            ifRateReactionRef.current = 'rate';
+            ReactNativeHapticFeedback.trigger(
+                'impactLight',
+                Variables.hapticOption,
+            );
+
+            Animated.timing(reactContainerRight, {
+              toValue: Styles.deviceWidth,
+              duration: 300,
+              useNativeDriver: true,
+            }).start();
+
+            // Animate from left to center with smooth timing
+            Animated.timing(rateContainerRight, {
+              toValue: 0,
+              duration: 300,
+              useNativeDriver: true,
+            }).start();
+          },
+          hide_rate: () => {
+
+            setTimeout(() => {
+              Animated.timing(rateContainerRight, {
+                toValue: Styles.deviceWidth,
+                duration: 300,
+                useNativeDriver: true,
+              }).start();
+            }, 500)
+
+
+          },
+          hide_reaction: () => {
+
+            setTimeout(() => {
+              Animated.timing(reactContainerRight, {
+                toValue: Styles.deviceWidth,
+                duration: 300,
+                useNativeDriver: true,
+              }).start();
+            }, 500)
+
+
+          },
+          show_more: () => props.actions(name, props.item),
+          show_share: () => props.actions(name, {index: props.index}),
+          show_flags: () => {
+            const argsFlag = {
+              index: props.index,
+              data: {post: props.item},
+            };
+            props.actions(name, argsFlag);
+          },
+          show_comments: () => {
+            const argsComments = {
+              index: props.index,
+              post: props.item,
+              photosVideos,
+              showComments: true,
+              dimension: {x: 0, y: 0, width: 0, height: 0},
+            };
+            props.actions('show_post_details', argsComments);
+          },
+        };
+
+        actionMap[name]?.();
+      },
+      [props, photosVideos, reactContainerRight, rateContainerRight],
+  );
+
+  const rate = useCallback(
+      args => {
+        props.refreshPostsRatings(props.item.id, args);
+      },
+      [props.refreshPostsRatings, props.item?.id],
+  );
+
+  const react = useCallback(
+      args => {
+        props.refreshPostsReactions(props.item.id, args);
+      },
+      [props.refreshPostsReactions, props.item?.id],
+  );
+
+  const gotoURL = useCallback(url => {
+    Linking.openURL(url);
+  }, []);
+
+  const onControlLongPress = useCallback(
+      event => {
+        const deviceItemWidth = wp(4) + 30
+        console.log(`onControlLongPress-deviceItemWidth`,deviceItemWidth)
+        console.log(`onControlLongPress-event.x `,event.x )
+
+        let reactWidth = 50;
+
+        if(props.item.ratings.average > 0){
+          reactWidth = 100
+        }
+
+        if (event.x < reactWidth) {
+          ifRateReactionRef.current = 'rate';
+          Animated.timing(rateContainerRight, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+          }).start();
+        } else if (event.x >= reactWidth && event.x <= (reactWidth + 50)) {
+
+          ifRateReactionRef.current = 'reaction';
+          Animated.timing(reactContainerRight, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+      [rateContainerRight, reactContainerRight],
+  );
+
+  const onControlLongPressEnd = useCallback(() => {
+    setTimeout(() => {
+      if (!panningRef.current) {
+        if (ifRateReactionRef.current === 'rate') {
+          Animated.timing(rateContainerRight, {
+            toValue: -Styles.deviceWidth,
+            duration: 300,
+            useNativeDriver: true,
+          }).start();
+        } else if (ifRateReactionRef.current === 'reaction') {
+          Animated.timing(reactContainerRight, {
+            toValue: -Styles.deviceWidth,
+            duration: 300,
+            useNativeDriver: true,
+          }).start();
+        }
+        ifRateReactionRef.current = '';
+        panningRef.current = false;
+      }
+    }, 50);
+  }, [rateContainerRight, reactContainerRight]);
+
+  const onControlPan = useCallback(event => {
+    panningRef.current = true;
+    const containerWidth = Styles.deviceWidth;
+    const itemWidth = containerWidth / 5;
+    const clampedX = Math.max(0, Math.min(event.x, containerWidth - 1));
+
+    const getItemIndex = x => {
+      if (x < 0 || x >= containerWidth) return 0;
+      const zoneIndex = Math.floor(x / itemWidth) + 1;
+      if (zoneIndex < 1 || zoneIndex > 5) return 0;
+
+      const zoneCenter = (zoneIndex - 0.5) * itemWidth;
+      const distanceFromCenter = Math.abs(x - zoneCenter);
+      const maxDistance = itemWidth * 0.5;
+
+      return distanceFromCenter <= maxDistance ? zoneIndex : 0;
+    };
+
+    const itemIndex = getItemIndex(clampedX);
+
+    if (ifRateReactionRef.current === 'reaction') {
+      setReactPannedItem(itemIndex);
+    } else if (ifRateReactionRef.current === 'rate') {
+      setRatePannedItem(itemIndex);
+    }
+
+
+  }, []);
+
+  const onContolPanEnd = useCallback(() => {
+    const executeAction = (item, setExecute, setExecuteDelete) => {
+      if (item !== 0) {
+        setExecute(true);
+        setTimeout(() => setExecute(false), 50);
+      } else {
+        setExecuteDelete(true);
+        setTimeout(() => setExecuteDelete(false), 50);
+      }
+    };
+
+    if (ifRateReactionRef.current === 'rate') {
+      executeAction(ratePannedItem, setExecuteRate, setExecuteDeleteRate);
+      Animated.timing(rateContainerRight, {
+        toValue: -Styles.deviceWidth,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    } else if (ifRateReactionRef.current === 'reaction') {
+      executeAction(reactPannedItem, setExecuteReact, setExecuteDeleteReact);
+      Animated.timing(reactContainerRight, {
+        toValue: -Styles.deviceWidth,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    }
+
+    ifRateReactionRef.current = '';
+    panningRef.current = false;
+  }, [ratePannedItem, reactPannedItem, rateContainerRight, reactContainerRight]);
+
+  const onControlTap = useCallback(
+      event => {
+        if (event.x < controlsContainerItemWidth) {
+          actions('show_ratings');
+        } else if (event.x >= reactionX && event.x <= textX) {
+          actions('show_reactions');
+        }
+      },
+      [controlsContainerItemWidth, actions],
+  );
+
+  const renderCarouselItem = useCallback(
+      ({item, index}) => (
+          <View style={props.style.carousel_item}>
+            <PhotoVideo
+                type="post"
+                item={item}
+                index={index}
+                videoActions={props.videoActions}
+                actions={actions}
+                activeIndex={carouselIndex}
+            />
+          </View>
+      ),
+      [props.videoActions, actions, carouselIndex],
+  );
+
+
+
+  // Memoized profile photo URI to prevent unnecessary re-renders
+  const profilePhotoUri = useMemo(
+      () =>
+          props.item.profile_photo.file
+              ? 'https://app.pixelmine.org:8005/pp/' + props.item.profile_photo.file
+              : null,
+      [props.item.profile_photo.file],
+  );
+
+  // Component sections
+  const ProfilePhoto = memo(
+      () => (
+          <Pressable
+              style={[props.style.header_profile_photo_pressable]}
+              onPress={() => actions('show_user_profile')}>
+            <VerticalAligner />
+            {profilePhotoUri ? (
+                <Image
+                    source={{
+                      uri: profilePhotoUri,
+                      cache: 'force-cache', // Enable caching
+                    }}
+                    style={[props.style.header_profile_photo, {width: wp(10), height: wp(10), borderRadius:wp(100)}]}
+                    resizeMode="cover"
+                />
+            ) : (
+                <View style={[props.style.header_no_profile_photo , {width: wp(12), height: wp(12), borderRadius:wp(100), alignItems: 'center', justifyContent:'center'}]}>
+                  <VerticalAligner />
+                  <FontAwesomeIcon icon={faUser} size={wp(5)} color={Styles.fontColor} />
+                  <VerticalAligner />
+                </View>
+            )}
+            <VerticalAligner />
+          </Pressable>
+      ),
+      [profilePhotoUri],
+  );
+
+  const Tags = memo(
+      () =>
+          hasTags && (
+              <Pressable
+                  style={[props.tags_container, props.style.tags_mentions_container]}
+                  onPress={() => actions('show_post_details', false)}>
+
+                <ScrollView horizontal={true}>
+                  {props.item.tags.slice(0, 3).map((tag, index) => (
+                      <View
+                          key={index}
+                          style={[
+                            props.style.tag_container,
+                            { borderRadius: 5, paddingHorizontal: wp(2),paddingTop:wp(1.2), paddingBottom:wp(1.2) },
+                          ]}
+                      >
+                        <VerticalAligner />
+                        <Text style={[{ fontSize:15, fontFamily:Styles.fontFamily, color:Styles.blueColor}]}>
+                          {decodeURIComponent(tag.tag.toLowerCase())}
+                        </Text>
+                        <VerticalAligner />
+                      </View>
+                  ))}
+
+                  {props.item.tags.length > 3 && (
+                      <View style={[
+                        props.style.tag_container,
+                        { borderRadius: 20, paddingLeft: wp(1.5), paddingRight: wp(1.5),paddingTop:wp(1.2), paddingBottom:wp(1.2) },
+                      ]}>
+                        <Text style={[{ fontSize:16, fontFamily:Styles.fontFamilyBold, color:Styles.blueColor }]}>
+                          more +
+                        </Text>
+                      </View>
+                  )}
+                </ScrollView>
+              </Pressable>
+          ),
+  );
+
+  const Mentions = memo(
+      () =>
+          hasMentions && (
+              <Pressable
+                  style={[props.tags_container, props.style.tags_mentions_container]}
+                  onPress={() => actions('show_post_details', false)}>
+
+                <ScrollView horizontal>
+                  {props.item.mentions.slice(0, 3).map((mention, index) => (
+                      <View key={index} style={[
+                        props.style.tag_container,
+                        { borderRadius: 20, paddingLeft: wp(1.5), paddingRight: wp(1.5),paddingTop:wp(1.2), paddingBottom:wp(1.2) },
+                      ]}>
+                        <Text style={{ fontSize:14, fontFamily:Styles.fontFamily, color:Styles.blueColor }}>
+                          @{mention.nickname}
+                        </Text>
+                      </View>
+                  ))}
+
+                  {props.item.mentions.length > 3 && (
+                      <Text style={{ fontSize:14, fontFamily:Styles.fontFamilyBold, color:Styles.blueColor, lineHeight:27  }}>
+                        and others...
+                      </Text>
+                  )}
+                </ScrollView>
+              </Pressable>
+          ),
+  );
+
+  // Early return for hidden posts
+  if (isHidden) {
+    return (
+        <View ref={componentRef} style={props.style.container}>
+          <View style={props.style.hidden_post_container}>
+            <FontAwesomeIcon
+                icon={faEyeSlash}
+                size={20}
+                color={Styles.orangeColor}
+                style={props.style.hidden_post_icon}
+            />
+            <Text style={[props.style.nickname, props.style.hidden_post_text]}>
+              This post is hidden
+            </Text>
+            <View style={props.style.hidden_post_more_container}>
+              <VerticalAligner />
+              <Pressable
+                  onPress={() => actions('show_more')}
+                  style={props.style.hidden_post_more_button}>
+                <FontAwesomeIcon
+                    icon={faEllipsis}
+                    size={18}
+                    color={Styles.fontColor}
+                />
+              </Pressable>
+              <VerticalAligner />
+            </View>
+          </View>
+        </View>
+    );
+  }
+
+  return (
+      <View ref={componentRef} style={props.style.container}>
+        <View style={sharedPostContainerStyle}>
+          {/* Header - Moved to top */}
+          {!props.isDraft && (
+              <View style={[props.style.header_container, {marginLeft:wp(2),marginRight:wp(2), marginBottom:wp(2)}]}>
+                <ProfilePhoto/>
+                <View style={props.style.nickname_datetime_public_flag_container}>
+                  <VerticalAligner />
+                  <Text style={{fontSize:18, fontFamily:Styles.fontFamilyBold, color:Styles.fontColor}}>{props.item.nickname}</Text>
+                  <View style={props.style.datetime_container}>
+                    <Text  style={{fontSize:13, fontFamily:Styles.fontFamily, color:Styles.blueColor}}>
+                      {props.item.datetime}
+                    </Text>
+                    <View style= {{justifyContent:"center", marginLeft:wp(1), marginRight:wp(1)}}>
+                      <FontAwesomeIcon
+                          icon={faCircle}
+                          size={3}
+                          color={Styles.blueColor}
+                      />
+                    </View>
+                    {PUBLIC_FLAGS[props.item.public_flag] === 'Public' ? (
+                        <View style={{ justifyContent: 'center' }}>
+
+                          <Text  style={{fontSize:13, fontFamily:Styles.fontFamily, color:Styles.blueColor}}>
+                            {"Public"}
+                          </Text>
+
+                        </View>
+                    ) : (
+                        <Text style={{ color: Styles.fontColor, fontSize: 10 }}>unknown</Text>
+                    )}
+                  </View>
+                  <VerticalAligner />
+                </View>
+
+                {/* Flag Counter - Top Right */}
+
+                <View style={{flexDirection:"row", marginRight:10}}>
+
+                  <Button size={18} icon={faFlag} type={"icon"} onPress={() => actions('show_flags')}/>
+
+                  <View style={props.style.flag_counter_text}>
+                    <VerticalAligner/>
+                    <View style={{flexDirection:"row"}}>
+                      <Text style={props.style.flag_red_count}>
+                        {props.item.flag_count}
+                      </Text>
+                      <Text> / </Text>
+                      <Text style={props.style.flag_green_count}>
+                        {props.item.flag_count_counter}
+                      </Text>
+                    </View>
+                    <VerticalAligner/>
+                  </View>
+
+                </View>
+
+
+                {!isSharedPost && (
+
+                    <Button size={20} icon={faEllipsis} type={"icon"} onPress={() => actions('show_more')}/>
+                )}
+
+              </View>
+          )}
+
+          {/* Draft Header */}
+          {props.isDraft && (
+              <View style={props.style.draft_header}>
+                <View style={{ flex: 1 }} />
+                <Pressable onPress={() => actions('show_post_draft')}>
+                  <VerticalAligner />
+                  <FontAwesomeIcon
+                      icon={faEllipsis}
+                      size={20}
+                      color={Styles.fontColor}
+                  />
+                  <VerticalAligner />
+                </Pressable>
+              </View>
+          )}
+
+          {/* Content - Image/Video */}
+          {hasContent && !isLive && (
+              <Pressable
+                  style={props.style.content_container}
+                  onPress={() => actions('show_post_details', false)}>
+                {photosVideos.length > 0 && props.item.layout === 0 && (
+                    <View>
+                      {photosVideos.length > 1 ? (
+                          <View style={props.style.layout_default_container}>
+
+                            <Carousel
+                                ref={carouselRef}  // ← ADDED: Attach ref here
+                                width={Styles.deviceWidth}
+                                removeClippedSubviews={false}
+                                sliderWidth={Styles.deviceWidth}
+                                itemWidth={Styles.deviceWidth}
+                                data={photosVideos}
+                                renderItem={renderCarouselItem}
+                                loop={false}
+                                onSnapToItem={setCarouselIndex}
+                            />
+
+
+                          </View>
+                      ) : (
+                          <View style={props.style.single_photo_video_container}>
+                            <PhotoVideo
+                                type="post"
+                                item={photosVideos[0]}
+                                index={0}
+                                videoActions={props.videoActions}
+                                actions={actions}
+                                activeIndex={0}
+                            />
+                          </View>
+                      )}
+
+                    </View>
+                )}
+              </Pressable>
+          )}
+
+
+
+          <Animated.View
+              style={[
+                {
+                  width:"100%",
+                  height:55,
+                  zIndex: 3000,
+                  position: "absolute",
+                  bottom: 70,
+                  transform: [{
+                    translateX: rateContainerRight
+                  }]
+                }
+              ]}>
+            <GestureDetector gesture={ratePanGesture}>
+              <View >
+
+
+                <Rate
+                    item={props.item}
+                    rate={rate}
+                    actions={actions}
+                />
+
+
+              </View>
+            </GestureDetector>
+          </Animated.View>
+
+
+          <Animated.View
+              style={[
+                {
+                  width:"100%",
+                  height:55,
+                  zIndex: 3000,
+                  position: "absolute",
+                  bottom: 70,
+                  transform: [{
+                    translateX: reactContainerRight
+                  }]
+                }
+              ]}>
+            <GestureDetector gesture={reactPanGesture}>
+              <View >
+
+
+                <Reaction
+                    item={props.item}
+                    react={react}
+                    actions={actions}
+                />
+
+              </View>
+            </GestureDetector>
+          </Animated.View>
+
+          {/* Live Video */}
+          {!hasContent && isLive && (
+              <Pressable
+                  style={props.style.content_container}
+                  onPress={() => actions('show_live_details', false)}>
+                <Video
+                    resizeMode="cover"
+                    repeat={true}
+                    volume={10}
+                    muted={true}
+                    paused={false}
+                    source={{
+                      uri: `http://18.181.163.53:5080/WebRTCApp/streams/${props.item.content.stream_id}.m3u8`,
+                    }}
+                    style={props.style.live_video}
+                    onError={err => console.log(JSON.stringify(err))}
+                />
+              </Pressable>
+          )}
+
+
+
+          {/* Content below image */}
+          <View style={containerChildStyle}>
+            {/* Title - Now below image */}
+            <View style={[props.style.title, {marginTop:hasContent ? 15 : -15}]}>
+              <Pressable
+                  style={props.style.title_pressable}
+                  onPress={() => actions('show_post_details', false)}>
+                <Text style={[{fontFamily:Styles.fontFamilyBold, color:Styles.fontColor, fontSize:18, },!hasMedia && { marginTop: hp(1) },]}>{decodeURIComponent(decodedTitle)}</Text>
+              </Pressable>
+            </View>
+
+            {/* Description - Below title */}
+            {hasDescription && (
+                <Pressable
+                    style={props.style.description_container}
+                    onPress={() => actions('show_post_details', false)}>
+                  <Hyperlink
+                      linkDefault={false}
+                      linkStyle={props.style.hyperlink}
+                      onPress={gotoURL}>
+                    <Text numberOfLines={2} style={[props.style.description,{fontSize:16, lineHeight:25, fontFamily:Styles.fontFamily, color:Styles.fontSubColor}]}>
+                      {decodedDescription}
+                    </Text>
+                  </Hyperlink>
+                </Pressable>
+            )}
+
+            {/* Tags and Mentions - At bottom */}
+            <Mentions />
+            <Tags />
+
+            {/* Controls - Below image */}
+            {!props.isDraft && (
+
+                <View
+                    style={props.style.pan_gesture_container}>
+
+                  <View style={props.style.controls_container}>
+
+                    {/* Ratings */}
+
+                    <Pressable style={[props.style.control, {width:props.item.ratings === 0 ? 50 : 90}]} onPress={() => actions("show_rate")} onLongPress={() => actions("show_ratings")}>
+
+                      <FontAwesomeIcon
+                          icon={faStar}
+                          size={20}
+                          color={Styles.fontColor}
+                      />
+
+                      <Text
+                          style={
+                            [props.item.ratings !== 0
+                                ? props.style.control_text
+                                : props.style.control_text ]
+                          }>
+                        {props.item.ratings !== 0
+                            ? `${props.item.ratings.average} (${totalRatings})`
+                            : '0'}
+                      </Text>
+
+                    </Pressable>
+
+                    {/* Reactions */}
+                    <Pressable
+                        style={[props.style.control, {width:50}]} onPress={() => actions("show_reaction")} onLongPress={() => actions("show_reactions")}>
+                      {userReactionEmoji ? (
+                          <Text style={props.style.user_reaction_emoji_large}>
+                            {userReactionEmoji}
+                          </Text>
+                      ) : (
+                          <FontAwesomeIcon icon={faSmile} size={20} color={Styles.fontColor} />
+                      )}
+
+                      <Text
+                          style={[
+                            props.style.control_text
+                          ]}
+                          onLayout={event => {
+                            const { x, y, width, height } = event.nativeEvent.layout;
+                            setTextX(x);
+                          }}>
+                        {props.item.reaction_count}
+                      </Text>
+
+                    </Pressable>
+
+
+                    {/* Comments */}
+                    <Pressable
+                        style={[props.style.control, {width:50}]}
+                        onPress={() => actions('show_comments', true)}>
+                      <FontAwesomeIcon
+                          icon={faComments}
+                          size={20}
+                          color={
+                            props.item.commented === 0
+                                ? Styles.fontColor
+                                : Styles.greenColor
+                          }
+                      />
+                      <Text style={props.style.control_text}>
+                        {props.item.comment_count}
+                      </Text>
+                    </Pressable>
+
+
+                    <View style={{ flex: 1 }} />
+
+                    {/* Share */}
+                    <Pressable
+                        style={[props.style.control, {width:40}]}
+                        onPress={() => actions('show_share')}>
+                      <FontAwesomeIcon
+                          icon={faShare}
+                          size={20}
+                          color={Styles.fontColor}
+                      />
+                      <Text style={props.style.control_text}>0</Text>
+                    </Pressable>
+
+
+                  </View>
+
+
+
+                </View>
+
+
+            )}
+
+          </View>
+        </View>
+
+      </View>
+  );
+})); // ← CHANGED: Close with }));
+
+// ← ADDED: displayName for better debugging
+PostItem.displayName = 'PostItem';
+
+export default PostItem;

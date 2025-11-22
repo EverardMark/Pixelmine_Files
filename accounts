@@ -45,6 +45,9 @@ MySql
   UN : serveruser
   PW : sutopp@12
 
+  UN : remoteuser
+  PW : Sutopp@12@90
+
 
 Apple Developer
 
@@ -122,9 +125,9 @@ ApyHub
   API Key : APY0TDkKu94VxOP3i6ss3W3rIzd0aXgAAh6SiokBPQAPoYf5UkuXqWt9CNt4hxFWW
 
 
-
 AntMedia
 
+  URL : https://ms.pixelmine.org:5443/
   UN :markpadama@pixelmine.org
   PW : Zmqp10_10qpzm@12@90
 
@@ -132,6 +135,11 @@ PSN
 
   UN : 
   PW : K)B9M2-D_nGQ)jK
+
+MS
+
+  UN : markpadama@lettersheets.com
+  PW : Sutopp@12@90
 
 
 

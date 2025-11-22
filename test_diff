@@ -1,0 +1,1636 @@
+/*******MDA-37********/
+import {hp, wp} from '../common/dimensions';
+import {
+  Image,
+  Platform,
+  Pressable,
+  Text,
+  View,
+  ActivityIndicator,
+  AppState,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Linking,
+  Dimensions,
+} from 'react-native';
+import {FontAwesomeIcon} from '@fortawesome/react-native-fontawesome';
+
+import Styles from '../global/styles';
+import {useNavigation} from '@react-navigation/native';
+import LanguageSelector from '../language/languageselector';
+import {
+  faBookLaw,
+  faBorderBottom,
+  faGripHorizontal,
+  faImage,
+  faLightbulbOn,
+  faLightbulbCflOn,
+  faQrcode,
+  faUser,
+} from '@fortawesome/pro-regular-svg-icons';
+import DeviceInfo from 'react-native-device-info';
+import React, {useEffect, useRef, useState} from 'react';
+import {
+  Camera,
+  useCameraDevice,
+  useCodeScanner,
+} from 'react-native-vision-camera';
+import Animated, {LinearTransition} from 'react-native-reanimated';
+import Carousel from 'react-native-reanimated-carousel';
+
+import VerticalAligner from '../common/verticalaligner';
+
+import Authentication, {authenticateWithServer} from '../utils/authentication';
+import BottomSheetContainer from '../common/bottomsheetcontainer';
+import {
+  BottomSheetScrollView,
+  TouchableWithoutFeedback,
+} from '@gorhom/bottom-sheet';
+import {PERMISSIONS, request, RESULTS} from 'react-native-permissions';
+import {faAngleDown, faHorizontalRule} from '@fortawesome/pro-solid-svg-icons';
+
+import PhotoVideoLibrary from '../common/photovideolibrary';
+import RNFS from 'react-native-fs';
+import jsQR from 'jsqr';
+import {NativeModules} from 'react-native';
+import Confirmation from '../common/confirmation';
+import Button from '../common/button';
+
+const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('window');
+
+// Check device size
+const isSmallDevice = SCREEN_WIDTH < 375;
+const isMediumDevice = SCREEN_WIDTH >= 375 && SCREEN_WIDTH < 414;
+const isLargeDevice = SCREEN_WIDTH >= 414;
+const {ImageParser} = NativeModules;
+
+const Login = props => {
+  const navigation = useNavigation();
+
+  /*******MDA-47********/
+  const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
+
+  /*******MDA-48********/
+  const [showTA, setShowTA] = useState(false);
+
+  const device = useCameraDevice('back');
+
+  const [cameraActive, setCameraActive] = useState(true);
+
+  const [cameraPermission, setCameraPermission] = useState(false);
+
+  const [showQRLogin, setShowQRLogin] = useState(false);
+
+  const [validQRLogin, setValidQRLogin] = useState(true);
+
+  const [showScanOrUploadQRLogin, setShowScanOrUploadQRLogin] = useState(false);
+
+  const [showPhotoVideoLibrary, setShowPhotoVideoLibrary] = useState(false);
+
+  const [photoVideoLibraryHeight, setPhotoVideoLibraryHeight] = useState(540);
+
+  const scrollViewRef = useRef(null);
+
+  const [confirmationPage, setConfirmationPage] = useState(0);
+
+  const [qrLoginProgress, setQrLoginProgress] = useState(0);
+
+  const [selectedAsset, setSelectedAsset] = useState(null);
+
+  const [confirmationDoneText, setConfirmationDoneText] = useState({
+    title: '',
+    button: '',
+    qrLoginStatus: 0,
+  });
+
+  /*******MDA-45********/
+  const [carouselIndex, setCarouselIndex] = useState(0);
+
+  const carouselData = [
+    {
+      id: 1,
+      image: require('../assets/images/scan.png'),
+      title: 'Quick Login via QR Code',
+      description: 'Use your QR code to login to your account.',
+    },
+    {
+      id: 2,
+      image: require('../assets/images/ScanQR.png'),
+      title: 'Register with Confidence',
+      description:
+        'By registering, you agree to our terms of service, privacy policy and community standards. Kindly check before you continue.',
+    },
+  ];
+
+  const renderCarouselItem = ({item}) => {
+    return (
+      <View style={styles.carouselItemContainer}>
+        <View style={styles.illustrationContainer}>
+          <Image
+            style={styles.illustrationImage}
+            source={item.image}
+            resizeMode="contain"
+          />
+        </View>
+
+        <View style={styles.textContainer}>
+          <Text style={styles.titleText}>{item.title}</Text>
+          <Text style={styles.descriptionText}>{item.description}</Text>
+        </View>
+      </View>
+    );
+  };
+
+  /*******USE EFFECTS********/
+
+  /*******MDA-38********/
+  useEffect(() => {
+    if (Platform.OS == 'android') {
+      request(PERMISSIONS.ANDROID.CAMERA).then(status => {
+        if (status == RESULTS.BLOCKED) {
+          setCameraPermission(false);
+        }
+
+        if (status == RESULTS.GRANTED) {
+          setCameraPermission(true);
+        }
+      });
+    } else {
+      request(PERMISSIONS.IOS.CAMERA).then(status => {
+        if (status == RESULTS.BLOCKED) {
+          setCameraPermission(false);
+        }
+
+        if (status == RESULTS.GRANTED) {
+          setCameraPermission(true);
+        }
+      });
+    }
+
+    AppState.addEventListener('change', nextAppState => {
+      if (nextAppState === 'active') {
+        if (Platform.OS == 'android') {
+          request(PERMISSIONS.ANDROID.CAMERA).then(status => {
+            if (status == RESULTS.BLOCKED) {
+              setCameraPermission(false);
+            }
+
+            if (status == RESULTS.GRANTED) {
+              setCameraPermission(true);
+            }
+          });
+        } else {
+          request(PERMISSIONS.IOS.CAMERA).then(status => {
+            if (status == RESULTS.BLOCKED) {
+              setCameraPermission(false);
+            }
+
+            if (status == RESULTS.GRANTED) {
+              setCameraPermission(true);
+            }
+          });
+        }
+      }
+    });
+  }, []);
+
+  /*******END USE EFFECTS********/
+  /*******Reset QR Login State when modal opens********/
+  useEffect(() => {
+    if (showQRLogin) {
+      setValidQRLogin(true);
+      setCameraActive(true);
+    }
+  }, [showQRLogin]);
+
+  /*******MDA-39********/
+  const startRegister = async () => {
+    let deviceId = await DeviceInfo.getUniqueId();
+
+    if (cameraPermission) {
+      if (deviceId == 'B2EA0A85-AE58-460A-A5BD-C91B966B380A') {
+        props.setPage(1);
+        navigation.navigate('Names');
+      } else {
+        navigation.navigate('InvitationCode');
+      }
+    }
+  };
+
+  /*******MDA-40********/
+  const codeScanner = useCodeScanner({
+    codeTypes: ['qr', 'ean-13'],
+    onCodeScanned: async codes => {
+      setCameraActive(false);
+
+      let authenicated = await Authentication.qrLogin(codes[0].value);
+
+      if (!authenicated) {
+        setValidQRLogin(false);
+
+        // Reset after showing error for 2 seconds
+        setTimeout(() => {
+          setCameraActive(true);
+        }, 2000);
+      } else {
+        setValidQRLogin(true);
+        setShowQRLogin(true);
+
+        setTimeout(() => {
+          // Reset states before navigation
+          setShowQRLogin(false);
+          setValidQRLogin(true);
+          setCameraActive(true);
+
+          navigation.navigate('HomeCommunityChatProfileNavigation');
+        }, 2000);
+      }
+    },
+  });
+
+  /*******MDA-41********/
+  const closeQRLogin = () => {
+    setShowQRLogin(false);
+    setValidQRLogin(true);
+    setCameraActive(true);
+  };
+
+  /*******MDA-42********/
+  const qrLoginUsingImage = async () => {
+    scrollViewRef.current.scrollTo({
+      x: Styles.deviceWidth * 2,
+      y: 0,
+      animated: true,
+    });
+
+    if (selectedAsset.uri) {
+      let qrImageUri = selectedAsset.uri;
+      let filePathToProcess = qrImageUri;
+      let tempFileCreated = false;
+
+      // on ios, if the URI is ph://, try to get the actual file path or copy it
+
+      if (Platform.OS === 'ios' && qrImageUri.startsWith('ph://')) {
+        const tempFileName = `temp_qr_image_${Date.now()}.png`;
+        const tempFilePath = `${RNFS.CachesDirectoryPath}/${tempFileName}`;
+
+        try {
+          await RNFS.copyAssetsFileIOS(filePathToProcess, tempFilePath, 0, 0);
+          filePathToProcess = tempFilePath;
+          tempFileCreated = true;
+        } catch (copyError) {
+          setErrorMessage('Error processing image file');
+          setShowErrorPopup(true);
+          return;
+        }
+      } else if (
+        Platform.OS === 'android' &&
+        qrImageUri.startsWith('content://')
+      ) {
+        const tempFileName = `temp_qr_image_${Date.now()}.png`;
+        const tempFilePath = `${RNFS.CachesDirectoryPath}/${tempFileName}`;
+
+        try {
+          await RNFS.copyFile(qrImageUri, tempFilePath);
+          filePathToProcess = tempFilePath;
+          tempFileCreated = true;
+        } catch (copyError) {
+          console.error('Error copying Android content:', copyError);
+          setErrorMessage('Error processing image file');
+          setShowErrorPopup(true);
+          return;
+        }
+      }
+
+      setQrLoginProgress(1);
+
+      try {
+        const result = await ImageParser.parseImage(filePathToProcess);
+
+        const byteCharacters = atob(result.data);
+        const byteArray = Uint8Array.from(byteCharacters, c => c.charCodeAt(0));
+        const pixelDataArray = new Uint8ClampedArray(byteArray);
+
+        const code = jsQR(pixelDataArray, result.width, result.height);
+
+        if (code) {
+          const scannedData = code.data;
+
+          const authenticated = await Authentication.qrLogin(scannedData);
+
+          if (authenticated) {
+            setConfirmationDoneText({
+              title: 'Login Success',
+              button: 'Go to Home',
+              qrLoginStatus: 1,
+            });
+          } else {
+            setConfirmationDoneText({
+              title: 'Invalid QR login',
+              button: 'Try Again',
+              qrLoginStatus: 2,
+            });
+          }
+        } else {
+          setConfirmationDoneText({
+            title: 'No QR code found in image',
+            button: 'Try Again',
+            qrLoginStatus: 2,
+          });
+
+          setShowErrorPopup(true);
+        }
+      } catch (e) {
+        setConfirmationDoneText({
+          title: 'Error reading QR code from file',
+          button: 'Try Again',
+          qrLoginStatus: 2,
+        });
+      } finally {
+        if (
+          tempFileCreated &&
+          filePathToProcess &&
+          (await RNFS.exists(filePathToProcess))
+        ) {
+          await RNFS.unlink(filePathToProcess).catch(cleanupError => {
+            console.error('Error cleaning up temporary file:', cleanupError);
+          });
+        }
+      }
+    } else {
+      console.log('handleQRFileSelection finished: no selectedAssets.uri');
+    }
+
+    setTimeout(() => {
+      scrollViewRef.current.scrollTo({
+        x: Styles.deviceWidth * 3,
+        y: 0,
+        animated: true,
+      });
+    }, 1000);
+  };
+
+  /*******MDA-43********/
+  const selectRemoveAssets = (asset, add) => {
+    setSelectedAsset(asset);
+
+    scrollViewRef.current.scrollTo({
+      x: Styles.deviceWidth,
+      y: 0,
+      animated: true,
+    });
+
+    setPhotoVideoLibraryHeight(300);
+  };
+
+  /*******MDA-44********/
+  const cancelQRLoginUsingImage = () => {
+    scrollViewRef.current.scrollTo({x: 0, y: 0, animated: true});
+
+    setPhotoVideoLibraryHeight(540);
+  };
+
+  /*******MDA-41********/
+  const closeQRLoginUsingImage = () => {
+    if (confirmationDoneText.qrLoginStatus !== 1) {
+      setPhotoVideoLibraryHeight(540);
+
+      scrollViewRef.current.scrollTo({x: 0, y: 0, animated: true});
+    } else {
+      setQrLoginProgress(0);
+
+      setShowPhotoVideoLibrary(false);
+
+      setShowScanOrUploadQRLogin(false);
+
+      setTimeout(() => {
+        navigation.navigate('HomeCommunityChatProfileNavigation');
+      }, 1000);
+    }
+  };
+
+  const openAppSettings = () => {
+    Linking.openSettings();
+  };
+
+  /*******MDA-46********/
+  return (
+    <View style={styles.container}>
+      <View
+        style={[
+          styles.containerContent,
+          {marginTop: Styles.insets.top, marginBottom: Styles.insets.bottom},
+        ]}>
+        <View style={styles.logoContainer}>
+          <Image
+            style={styles.logoImage}
+            source={require('../assets/images/logo.png')}
+          />
+          <Image
+            resizeMode={'contain'}
+            style={styles.logoImageSmall}
+            source={require('../assets/images/logo_2.png')}
+          />
+        </View>
+
+        {!cameraPermission && (
+          <View
+            style={{
+              flexDirection: 'column',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+            }}>
+            <VerticalAligner />
+
+            <Text
+              style={{
+                textAlign: 'center',
+                fontSize: 15,
+                fontFamily: Styles.fontFamily,
+                color: Styles.redColor,
+              }}>
+              {'Please allow Pixelmine to use your camera'}
+            </Text>
+
+            <Pressable
+              style={{marginTop: 20, height: 40}}
+              onPress={() => openAppSettings()}>
+              <Text
+                style={{
+                  lineHeight: 40,
+                  textAlign: 'center',
+                  fontSize: 18,
+                  fontFamily: Styles.fontFamilyBold,
+                  color: Styles.fontColor,
+                }}>
+                {'Go To Settings'}
+              </Text>
+            </Pressable>
+
+            <VerticalAligner />
+          </View>
+        )}
+
+        <View style={{flex: 1}} />
+
+        <View style={{flexDirection: 'column', height: 300}}>
+          {/* Action Buttons */}
+          <View style={styles.buttonContainer}>
+            <Button
+              label={'Scan QR code to login'}
+              type={'primary'}
+              onPress={() => setShowScanOrUploadQRLogin(true)}
+            />
+
+            <Button
+              label={'Register'}
+              type={'secondary'}
+              style={{marginTop: 10}}
+              onPress={() => startRegister()}
+            />
+          </View>
+
+          {/* Footer Links */}
+          <View style={styles.footerContainer}>
+            <Pressable onPress={() => setShowTA(true)}>
+              <Text style={styles.footerLink}>Terms and Agreement</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setShowPrivacyPolicy(true)}
+              style={{marginTop: 10}}>
+              <Text style={styles.footerLink}>Privacy Policy</Text>
+            </Pressable>
+
+            <View style={styles.footerInfoContainer}>
+              <Text style={styles.footerInfoText}>Pixelmine Japan</Text>
+              <Text style={styles.footerInfoText1}>
+                {Platform.OS === 'ios' ? 'IOS' : 'Android'} Version{' '}
+                {DeviceInfo.getVersion()}
+              </Text>
+              <Text style={styles.footerInfoText1}>EN</Text>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      <BottomSheetContainer
+        enablePanDownToClose={true}
+        open={showPrivacyPolicy}
+        closeCallback={() => setShowPrivacyPolicy(false)}>
+        <View style={styles.bottomSheetContainer}>
+          <View
+            style={[styles.bottomSheetHeader, {marginTop: Styles.insets.top}]}>
+            <View style={styles.bottomSheetHeaderContent}>
+              <VerticalAligner />
+
+              <View style={styles.bottomSheetHeaderRow}>
+                <Text style={styles.bottomSheetHeaderText}>
+                  {LanguageSelector.getText('privacy_policy')}
+                </Text>
+              </View>
+
+              <VerticalAligner />
+            </View>
+          </View>
+
+          <View
+            style={[
+              styles.bottomSheetContent,
+              {marginBottom: Styles.insets.bottom},
+            ]}>
+            <View style={styles.bottomSheetContentInner}>
+              <PrivacyPolicy />
+            </View>
+          </View>
+        </View>
+      </BottomSheetContainer>
+
+      <BottomSheetContainer
+        enablePanDownToClose={true}
+        open={showScanOrUploadQRLogin}
+        closeCallback={() => setShowScanOrUploadQRLogin(false)}>
+        <View style={styles.spacer}>
+          <VerticalAligner />
+          <View style={Styles.bottomsheet.bottomsheet_content_container}>
+            <View style={Styles.bottomsheet.bottomsheet_content_container_2}>
+              <FontAwesomeIcon
+                icon={faHorizontalRule}
+                size={40}
+                style={styles.centerAlign}
+                color={Styles.disabledColor}
+              />
+            </View>
+            <View
+              style={[
+                Styles.bottomsheet.bottomsheet_button_container,
+                styles.paddingTop10,
+              ]}>
+              <Button
+                icon={faQrcode}
+                label={'Scan QR Login'}
+                sub={'Use your camera to scan your QR Login'}
+                type={'icon_with_sub'}
+                onPress={() => setShowQRLogin(true)}
+              />
+
+              <Button
+                style={{marginTop: 10}}
+                icon={faImage}
+                label={'Upload from photo library'}
+                sub={'Select your QR Login from your photo library'}
+                type={'icon_with_sub'}
+                onPress={() => setShowPhotoVideoLibrary(true)}
+              />
+            </View>
+
+            <View
+              style={[
+                styles.bottomSheetFooter,
+                {height: Styles.insets.bottom + 20},
+              ]}
+            />
+          </View>
+        </View>
+      </BottomSheetContainer>
+
+      <BottomSheetContainer
+        enablePanDownToClose={true}
+        open={showTA}
+        closeCallback={() => {
+          setShowTA(false);
+        }}>
+        <View style={styles.bottomSheetContainer}>
+          <View
+            style={[styles.bottomSheetHeader, {marginTop: Styles.insets.top}]}>
+            <View style={styles.bottomSheetHeaderContent}>
+              <VerticalAligner />
+
+              <View style={styles.bottomSheetHeaderRow}>
+                <Text style={styles.bottomSheetHeaderText}>
+                  {LanguageSelector.getText('terms_of_service')}
+                </Text>
+              </View>
+
+              <VerticalAligner />
+            </View>
+          </View>
+
+          <View
+            style={[
+              styles.bottomSheetContent,
+              {marginBottom: Styles.insets.bottom},
+            ]}>
+            <View style={styles.bottomSheetContentInner}>
+              <TermsAndAgreements />
+            </View>
+          </View>
+        </View>
+      </BottomSheetContainer>
+
+      <BottomSheetContainer
+        enablePanDownToClose={true}
+        open={showQRLogin}
+        closeCallback={() => closeQRLogin()}>
+        <View style={styles.spacer}>
+          <VerticalAligner />
+
+          <View
+            style={[
+              styles.cameraContainer,
+              !validQRLogin && cameraActive && styles.cameraContainerError,
+              validQRLogin && !cameraActive && styles.cameraContainerSuccess,
+            ]}>
+            <Camera
+              codeScanner={codeScanner}
+              style={styles.cameraStyle}
+              device={device}
+              isActive={cameraActive}
+            />
+            <View
+              style={[
+                styles.cameraHeader,
+                !validQRLogin && cameraActive && styles.cameraHeaderError,
+                validQRLogin && !cameraActive && styles.cameraHeaderSuccess,
+              ]}>
+              <View style={{height: '100%'}}>
+                <VerticalAligner />
+                <FontAwesomeIcon
+                  icon={faLightbulbOn}
+                  size={20}
+                  color={Styles.whiteColor}
+                  style={styles.qrIcon}
+                />
+                <VerticalAligner />
+              </View>
+              <Text style={styles.cameraHeaderText}>
+                {!validQRLogin && cameraActive
+                  ? 'You scanned an invalid QR Login'
+                  : validQRLogin && !cameraActive
+                  ? 'Login Successful'
+                  : 'Scan your QR Login'}
+              </Text>
+            </View>
+            <View style={styles.spacer} />
+            {!cameraActive && (
+              <ActivityIndicator style={styles.activityIndicator} />
+            )}
+          </View>
+          <VerticalAligner />
+        </View>
+      </BottomSheetContainer>
+
+      <BottomSheetContainer
+        enablePanDownToClose={true}
+        open={showPhotoVideoLibrary}
+        closeCallback={() => setShowPhotoVideoLibrary(false)}>
+        <View style={styles.spacer}>
+          <VerticalAligner />
+          <Animated.View
+            layout={LinearTransition}
+            style={[
+              Styles.bottomsheet.bottomsheet_content_container,
+              styles.photoLibraryAnimatedContainer,
+              {
+                height: photoVideoLibraryHeight,
+                backgroundColor: Styles.whiteColor,
+              },
+            ]}>
+            <View
+              style={[
+                Styles.bottomsheet.bottomsheet_content_container_2,
+                // styles.noBorder,
+              ]}>
+              <FontAwesomeIcon
+                icon={faHorizontalRule}
+                size={40}
+                style={styles.centerAlign}
+                color={Styles.disabledColor}
+              />
+            </View>
+            {/****HEADER****/}
+            {/* <View style={Styles.bottomsheet.bottomsheet_header_container}>
+                <View
+                  style={Styles.bottomsheet.bottomsheet_header_title_container}>
+                  <Text style={Styles.bottomsheet.bottomsheet_header_title}>
+                    {LanguageSelector.getText('photos_videos_library_title')}
+                  </Text>
+                </View>
+              </View> */}
+            {/****END HEADER****/}
+
+            <ScrollView
+              scrollEnabled={false}
+              horizontal={true}
+              showsHorizontalScrollIndicator={false}
+              ref={scrollViewRef}>
+              <View style={styles.photoLibraryContainer}>
+                <PhotoVideoLibrary
+                  showOptions={false}
+                  showHeader={false}
+                  close={{}}
+                  selectRemoveAssets={selectRemoveAssets}
+                />
+              </View>
+
+              <View style={styles.photoLibraryScrollContent}>
+                <Confirmation
+                  question={'Login using the selected QR Code'}
+                  sub_question={''}
+                  processing={'Reading the QR Code...'}
+                  sub_processing={''}
+                  done={confirmationDoneText.title}
+                  sub_done={LanguageSelector.getText(
+                    'create_post_confirmation_sub_done',
+                  )}
+                  continue={qrLoginUsingImage}
+                  cancel={cancelQRLoginUsingImage}
+                  page={confirmationPage}
+                  progressColor={Styles.orangeColor}
+                  progress={qrLoginProgress}
+                  close={closeQRLoginUsingImage}
+                  closeButtonText={confirmationDoneText.button}
+                />
+              </View>
+            </ScrollView>
+          </Animated.View>
+          <View style={styles.bottomSheetFooter} />
+        </View>
+      </BottomSheetContainer>
+    </View>
+  );
+};
+
+export default Login;
+
+const PrivacyPolicy = () => {
+  return (
+    <BottomSheetScrollView style={styles.spacer}>
+      <View style={styles.columnFlex}>
+        <Text style={styles.privacyPolicyText}>
+          {
+            '1. In these Terms, "personal information" refers to information that falls under Article'
+          }
+        </Text>
+
+        <Text style={styles.privacyPolicyText}>
+          {
+            '2. Paragraph 1 of the Act on the Protection of Personal Information.'
+          }
+        </Text>
+
+        <Text style={styles.privacyPolicyText}>
+          {
+            '3. We may use the personal information provided by users for the purposes indicated below.'
+          }
+        </Text>
+
+        <Text style={styles.privacyPolicyIndentedText}>
+          {'(i) Provision and guidance of our service'}
+        </Text>
+
+        <Text style={styles.privacyPolicyIndentedText}>
+          {'(ii) Payment for contributions to our service'}
+        </Text>
+
+        <Text style={styles.privacyPolicyIndentedText}>
+          {
+            '(iii) Analyzing the status of use and other information related to our Services'
+          }
+        </Text>
+
+        <Text style={styles.privacyPolicyIndentedText}>
+          {'(iv) Contacting Users'}
+        </Text>
+
+        <Text style={styles.privacyPolicyIndentedText}>
+          {'(v) Improvement of our Services'}
+        </Text>
+
+        <Text style={styles.privacyPolicyIndentedText}>
+          {'(vi) Development and guidance of our new Services'}
+        </Text>
+
+        <Text style={styles.privacyPolicyIndentedText}>
+          {'(vii) Creation of anonymized statistical data'}
+        </Text>
+
+        <Text style={styles.privacyPolicyText}>
+          {
+            '4. We will never provide Personal Data to a third party, except when we have obtained prior consent from the user or when permitted by the Act on the Protection of Personal Information or other relevant laws and regulations.'
+          }
+        </Text>
+
+        <Text style={styles.privacyPolicyText}>
+          {
+            '5. In the event that we entrust the processing of personal information to an external party, we will select an appropriate contractor, enter into a contract regarding the protection of personal information with the contractor, and conduct necessary and appropriate supervision of the contractor.'
+          }
+        </Text>
+
+        <Text style={styles.privacyPolicyText}>
+          {
+            '6. In the event that we receive a request from a user for disclosure, correction, cessation of use, deletion, or suspension of provision to third parties regarding their personal information, we will respond appropriately and promptly in accordance with the Act on the Protection of Personal Information.\n'
+          }
+        </Text>
+      </View>
+    </BottomSheetScrollView>
+  );
+};
+
+const TermsAndAgreements = () => {
+  return (
+    <BottomSheetScrollView
+      style={styles.spacer}
+      showsVerticalScrollIndicator={false}>
+      <View style={styles.columnFlex}>
+        <Text style={styles.termsHeaderText}>
+          {'1. Your Relationship With Us'}
+        </Text>
+
+        <Text style={styles.termsBodyText}>
+          {
+            'These Terms of Service(or "Terms") apply to all actions of persons ("you" or "User(s)", depending upon the context) using the social networking service "Pixelmine" provided by Pixelmine Japan Corporation("we," "us," or "our"). These Terms of Service constitute an agreement between you and us, between Users, between Users and third parties.'
+          }
+        </Text>
+        <Text style={styles.termsHeaderText}>{'2. About Our Services'}</Text>
+
+        <Text style={styles.termsBodyText}>
+          {'We provide a platform that enables Users to post and receive evaluations from other Users across our platform. Users must show respect toward other Users, their posts, and their votes when utilizing the Services.\n' +
+            'In addition, We operate the Services according to laws and other rules. Each User shall abide by laws and other rules.'}
+        </Text>
+
+        <Text style={styles.termsHeaderText}>{'3. Our Agreement'}</Text>
+
+        <Text style={styles.termsBodyText}>
+          {
+            '1. These Terms set forth the conditions for the use of this Service. In order to use the Services, you need to agree to these Terms of Use.'
+          }
+          {'\n'}
+          {
+            '2. We will deem that you have agreed to these Terms of Use by actually using the Services.'
+          }
+        </Text>
+
+        <Text style={styles.termsHeaderText}>{'4. Accepting the Terms'}</Text>
+
+        <Text style={styles.termsBodyText}>
+          {
+            '1. In this service, we may set forth the terms of use besides these Terms as the case may be. Notwithstanding any name, these terms of use may constitute a part of these Terms.'
+          }
+          {'\n'}
+          {
+            '2. In the event of a discrepancy between(any conflict between) the provisions of these Terms and other terms of use, the other terms of use shall take precedence.'
+          }
+        </Text>
+
+        <Text style={styles.termsHeaderText}>{'5. Changes to the Terms'}</Text>
+
+        <Text style={styles.termsBodyText}>
+          {
+            '1. We amend these Terms at any time and for any reason, based on our discretion and judgment.'
+          }
+          {'\n'}
+          {
+            '2. Except as otherwise provided by us, the new Terms shall take effect at the time it is displayed on the service. Your continued access or use of the Services after the date of the new Terms constitutes your acceptance of the new Terms.'
+          }
+        </Text>
+        <Text style={styles.termsHeaderText}>{'6. Who can use Pixelmine'}</Text>
+
+        <Text style={styles.termsBodyText}>
+          {
+            '1. We amend these Terms at any time and for any reason, based on our discretion and judgment.'
+          }
+          {'\n'}
+          {
+            '2. Except as otherwise provided by us, the new Terms shall take effect at the time it is displayed on the service. Your continued access or use of the Services after the date of the new Terms constitutes your acceptance of the new Terms.'
+          }
+        </Text>
+
+        <Text style={styles.termsHeaderText}>
+          {'7. Your Account with Us (Request for account creation)'}
+        </Text>
+        <Text style={styles.termsBodyText}>
+          {
+            '1. If you wish to hold an account, you need to agree to these Terms and apply so according to the method designated by us.'
+          }
+          {'\n'}
+          {
+            '2. In response to the application in the preceding paragraph, we grant a user an account when we approve the application and notify the applicant.'
+          }
+          {'\n'}
+          {
+            '3. Each user can create only one account (your own). A single user(もしくはindividual) cannot hold multiple accounts, nor can multiple users or organizations share and hold a single account.'
+          }
+          {'\n'}
+          {
+            '4. If we determine that any of the following items apply, we do not approve of granting an account.'
+          }
+        </Text>
+
+        <Text style={styles.termsIndentedText}>
+          {
+            '(i) If the applicant submits an application by a method other than that specified in paragraph 1.'
+          }
+        </Text>
+        <Text style={styles.termsIndentedText}>
+          {
+            '(ii) If the applicant had failed to comply with any of the provisions of these Terms or any other terms of use, or if we suspect these.'
+          }
+        </Text>
+        <Text style={styles.termsIndentedText}>
+          {'(iii) In the event that we think it is inappropriate.'}
+        </Text>
+        <Text style={styles.termsHeaderText}>
+          {'8. Request for account deletion'}
+        </Text>
+        <Text style={styles.termsBodyText}>
+          {
+            '1. If you wish to delete an account, you need to submit a request for account deletion to us according to the method designated by us.'
+          }
+          {'\n'}
+          {
+            "2. In response to the application in the preceding paragraph, the applicant's (user) account will be deleted when we approve the application and notify  the applicant."
+          }
+          {'\n'}
+          {
+            '3. The deletion of an account does not result in the removal of posts, votes, or other actions performed by the user.'
+          }
+        </Text>
+
+        <Text style={styles.termsHeaderText}>
+          {'9. Control of email address and password registration'}
+        </Text>
+        <Text style={styles.termsBodyText}>
+          {
+            '1. An account holder is required to register an email address that endures reliable communication.'
+          }
+          {'\n'}
+          {
+            '2. An account holder should not register an email address that is shared with or accessible by third parties.'
+          }
+          {'\n'}
+          {
+            '3. In the event that the registered email address does not meet the conditions specified in the previous paragraph 2, the account holder must register a new email address that meets those conditions as their registered email address.'
+          }
+          {'\n'}
+          {
+            '4. If we reach out to the registered email address and do not receive a response within a week, we may consider that the email address does not meet the conditions specified in the paragraph 1 and 2, and we may take actions such as account deletion.'
+          }
+          {'\n'}
+          {
+            '5. An account holder must strictly manage a registered email address and your password under its own responsibility so that it will not be abused.'
+          }
+          {'\n'}
+          {
+            '6. Regarding any actions taken on our service under a specific account, we shall deem them to have been performed by the account holder. We shall not be liable to you for any damages arising from the use of the registered email address or password by a third party, unless there is willful misconduct or gross negligence on our part.'
+          }
+        </Text>
+        <Text style={styles.termsHeaderText}>{'10. Usage Environment'}</Text>
+        <Text style={styles.termsBodyText}>
+          {
+            "1. Users are responsible for preparing the necessary devices, software, communication methods, and other environments required to use this service, at their own expense. We shall have no involvement in the user's usage environment and shall bear no responsibility for it."
+          }
+          {'\n'}
+          {
+            '2. Users are required to implement security measures to prevent computer virus infections, unauthorized access, and information leaks'
+          }
+        </Text>
+
+        <Text style={styles.termsHeaderText}>
+          {"11. User's Responsibility"}
+        </Text>
+        <Text style={styles.termsBodyText}>
+          {
+            '1. Users are responsible for using our service at their own risk and are fully accountable for all actions taken and their outcomes within the service.'
+          }
+          {'\n'}
+          {
+            '2. Users are responsible for the information they post and the votes they cast while using our service. We hold no liability for these actions.'
+          }
+          {'\n'}
+          {
+            '3. In the event that a user violates the honor, emotional well-being, copyright, privacy rights, or any other rights or legal interests of others, or posts harmful or illegal information, the user must address the issue at their own responsibility and expense, and we will bear no liability.'
+          }
+        </Text>
+
+        <Text style={styles.termsHeaderText}>
+          {'12. Contribution to Our Service'}
+        </Text>
+        <Text style={styles.termsBodyText}>
+          {
+            '1. In the event that a User engages in actions such as posting and voting that contribute to the Service, the User can receive compensation based on the evaluation of their contributions, derived from a portion of the advertising revenue received by us from the operation of the Service. We intend to implement a system for users to receive compensation in the future.'
+          }
+          {'\n'}
+          {
+            '2. Compensation outlined in the previous section will be received in a manner specified by us, and users must adhere to the procedures established by us.'
+          }
+        </Text>
+
+        <Text style={styles.termsHeaderText}>
+          {'13. Posted Content Storage'}
+        </Text>
+        <Text style={styles.termsBodyText}>
+          {
+            '1. We do not assure that the content posted on our service will be preserved. Posts may be demoted or hidden based on votes from users. If users find it necessary to save the information posted on our service, they shall do so at their own responsibility.'
+          }
+          {'\n'}
+          {
+            "2. Even if an account is deleted or canceled, we do not assure that the posts and votes made by the account holder will be rendered invisible. Additionally, we may continue to utilize the data associated with posts and votes made by the account holder regardless of the account's status."
+          }
+        </Text>
+
+        <Text style={styles.termsHeaderText}>{'14. Prohibited Actions'}</Text>
+
+        <Text style={styles.termsBodyText}>
+          {
+            'Users are prohibited from performing the following actions while using this service.In the event that we determine a violation of prohibited activities, or a potential violation, we may implement measures such as account cancellation, restrictions on service use, or other unfavorable actions'
+          }
+          {'\n'}
+          {
+            '1. Actions that infringe upon the rights or legal interests of our company or others, or actions that may pose a risk of such infringement.'
+          }
+
+          {'\n'}
+          {
+            '2. Actions that discriminate against or defame our company, users, or third parties, promote discrimination against others, or damage the honor or reputation of others.'
+          }
+          {'\n'}
+          {
+            '3. Using this service while pretending to be someone else or misleadingly asserting an affiliation or partnership with another person or organization.'
+          }
+          {'\n'}
+          {
+            '4. Actions that are linked to or may potentially lead to crimes such as fraud, the abuse of controlled substances, child trafficking, and the illegal sale of bank accounts and mobile phones.'
+          }
+          {'\n'}
+          {
+            '5. Any posting, displaying, selling, or involvement in facilitating, encouraging, or assisting in the distribution of information deemed obscene, involving child pornography, or child abuse is prohibited.'
+          }
+          {'\n'}
+          {
+            '6. Any use of our service for the intent of sexual activities, lewd acts, or meeting individuals without prior familiarity is forbidden.'
+          }
+          {'\n'}
+          {
+            '7. Any act that entices or promotes youth to run away from home is prohibited.'
+          }
+          {'\n'}
+          {
+            '8. Illegal gambling, illegal activities (such as the transfer of firearms, manufacturing of explosives, provision of child pornography, forgery of public documents, murder, threats, etc.), solicitation, contracting, facilitation, instigation, or assistance of suicide is strictly forbidden.'
+          }
+          {'\n'}
+          {
+            '9. Any posting or displaying information that is difficult to verify for its truthfulness or contains falsehoods is prohibited.'
+          }
+          {'\n'}
+          {
+            '10. Any posting or display of spam messages or spam content is prohibited.'
+          }
+          {'\n'}
+          {
+            '11. Any posting or display of information that includes any other content deemed inappropriate by us is prohibited.'
+          }
+          {'\n'}
+          {
+            '12. Sending or posting harmful computer programs, such as viruses, is prohibited.'
+          }
+          {'\n'}
+          {
+            '13. Any actions that impose a burden on our servers or those of others, interfere with the operation of this service and its network or systems, or that may potentially lead to such interference are prohibited.'
+          }
+          {'\n'}
+          {
+            '14. Any actions that violate any provision of these Terms are prohibited.'
+          }
+          {'\n'}
+          {
+            '15. Any other actions that we consider inappropriate are prohibited.'
+          }
+        </Text>
+        <Text style={styles.termsHeaderText}>
+          {'15. Changes to the Services'}
+        </Text>
+        <Text style={styles.termsBodyText}>
+          {
+            'We reserve the right to add, change, suspend, or terminate the services at any time for any reason.'
+          }
+        </Text>
+
+        <Text style={styles.termsHeaderText}>{'16. Service fees'}</Text>
+
+        <Text style={styles.termsBodyText}>
+          {'1. The use of the Service shall be provided free of charge.'}
+          {'\n'}
+          {
+            '2. We may set forth paid services, paid options, and other related offerings. In such cases, the service fees, payment methods, and other related matters shall be determined separately by us.'
+          }
+        </Text>
+        <Text style={styles.termsHeaderText}>
+          {'17. Rights related to content'}
+        </Text>
+
+        <Text style={styles.termsBodyText}>
+          {
+            '1. Except as otherwise provided by us, nothing is changing about your rights in your content. We do not claim ownership of your content that you post on or through the Service.'
+          }
+          {'\n'}
+          {
+            '2. We may use, free of charge, the information posted on our service to the extent necessary for the smooth operation of the service, as well as for the development, improvement, and maintenance of our systems.'
+          }
+          {'\n'}
+          {
+            '3. When using the information in accordance with the preceding paragraph, we may omit parts of the information or the display of names.'
+          }
+        </Text>
+        <Text style={styles.termsHeaderText}>
+          {'18. Exclusion of organized crime groups'}
+        </Text>
+        <Text style={styles.termsBodyText}>
+          {'The user shall warrant the following to our company.'}
+          {
+            "1. The user warrants that they are not and have not been within the last five years a member of an organized crime group, a member of a designated organized crime group, a quasi-member of an organized crime group, a company affiliated with an organized crime group, a corporate extortionist, an individual claiming to represent a social movement, a violent group with special knowledge, or any other person equivalent to these (hereinafter collectively referred to as 'antisocial forces')."
+          }
+          {'\n'}
+          {
+            '2. The user warrants that they do not have a relationship in which antisocial forces are recognized as effectively controlling or being involved in the management.'
+          }
+          {'\n'}
+          {
+            '3. The user warrants that they are not utilizing antisocial forces for the purpose of obtaining unlawful benefits for themselves or a third party, or for the purpose of causing damage to a third party.'
+          }
+          {'\n'}
+          {
+            '4. The user warrants that they do not have any relationship involving the provision of funds or other benefits to antisocial forces or any other involvement.'
+          }
+        </Text>
+
+        <Text style={styles.termsHeaderText}>{'19. Disclaimer'}</Text>
+
+        <Text style={styles.termsBodyText}>
+          {
+            "1. We do not engage in users' communications or activities. In the event of a dispute between users or between a user and a third party, it shall be resolved between the parties involved, and we shall not be held responsible."
+          }
+          {'\n'}
+          {
+            '2. We shall not be liable for any damages arising from the addition, modification, interruption, or termination of the content of this service. This also applies in the event of decreased display speed or disruptions caused by excessive access or other unforeseen factors'
+          }
+          {'\n'}
+          {
+            "3. We are not obligated to monitor or store the information posted on this service. However, at our sole discretion and judgment, we may view, store, and disclose the information posted on this service to third parties (hereinafter referred to as 'viewing, etc.')."
+          }
+          {'\n'}
+          {
+            '4. We shall not be responsible for the legality, morality, reliability, or accuracy of the information posted on this service.'
+          }
+          {'\n'}
+          {
+            "5. If we determine that any acts in violation of these Terms or other terms and conditions of use have occurred or are likely to occur, we may take all necessary measures, including the deletion of the user's account or restrictions on the use of our service. We are not obligated to disclose the reasons for such measures and shall not be liable for any damages arising from them."
+          }
+          {'\n'}
+          {
+            '6. In the event that these Terms and other terms and conditions of use fall under consumer contracts as defined by the Consumer Contract Act, the provisions that completely exempt us from liability for damages shall not apply. In such cases, if the damages incurred by the user are based on our breach of contract or tort and if there is intent or gross negligence on our part, we shall be liable for damages up to the amount directly suffered by the user.'
+          }
+        </Text>
+
+        <Text style={styles.termsHeaderText}>
+          {'20. Validity of these Terms and other terms and conditions of use'}
+        </Text>
+
+        <Text style={styles.termsBodyText}>
+          {
+            '1. Even if any provision of these Terms and other terms and conditions of use is deemed invalid based on laws and regulations, the remaining provisions of these Terms and other terms and conditions of use shall remain valid.'
+          }
+          {'\n'}
+          {
+            '2. Even if all or part of these Terms and other terms and conditions of use are deemed invalid or canceled in relation to a specific user, they shall remain valid in relation to other users.'
+          }
+        </Text>
+        <Text style={styles.termsHeaderText}>
+          {'21. Governing law and jurisdiction'}
+        </Text>
+
+        <Text style={styles.termsBodyText}>
+          {
+            '1. The Japanese version of these Terms of Use shall be the official text, and the establishment, coming into force, and interpretation of these Terms of Use shall be governed by the laws of Japan. Our Terms are written in Japanese (Japan). Any translated version is provided solely for your convenience. To the extent any translated version of our Terms conflicts with the Japanese version, the Japanese version controls. Any amendment to or waiver proposed by you of our Terms requires our express consent.\n'
+          }
+          {'\n'}
+          {
+            '2. Any dispute arising between the User and us attributable or related to the Services (including the content of posts, etc.) shall be subject to the exclusive jurisdiction of Tokyo District Court as the court of first instance.'
+          }
+        </Text>
+      </View>
+    </BottomSheetScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  // Main container styles
+  container: {
+    justifyContent: 'flex-start',
+    flex: 1,
+    flexDirection: 'column',
+    backgroundColor: '#FFFFFF',
+    paddingTop: Platform.OS === 'ios' ? hp(0) : 0,
+    paddingBottom: Platform.OS === 'ios' ? hp(0) : 0,
+  },
+
+  containerContent: {
+    marginTop: Platform.OS === 'ios' ? hp(0.5) : 0,
+    justifyContent: 'flex-start',
+    flex: 1,
+    alignSelf: 'center',
+    flexDirection: 'column',
+    width: '100%',
+  },
+
+  // Carousel section
+  carouselSection: {
+    marginTop: Platform.OS === 'ios' ? Styles.insets.top + hp(0.5) : hp(5),
+    height: hp(50),
+  },
+
+  carouselItemContainer: {
+    width: SCREEN_WIDTH,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: wp(5),
+  },
+
+  // Illustration section
+  illustrationContainer: {
+    marginBottom: hp(0.5),
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: wp(2),
+  },
+
+  illustrationImage: {
+    width: isSmallDevice ? wp(65) : wp(70),
+    height: isSmallDevice ? hp(20) : hp(25),
+  },
+
+  // Text section
+  textContainer: {
+    marginBottom: hp(1),
+    paddingHorizontal: wp(6),
+    alignItems: 'center',
+  },
+
+  titleText: {
+    fontSize: isSmallDevice ? 20 : isMediumDevice ? 23 : 26,
+    fontWeight: '700',
+    color: '#000000',
+    alignItems: 'center',
+    fontFamily: Styles.fontFamilyBold,
+    marginBottom: hp(1.5),
+    lineHeight: isSmallDevice ? 28 : isMediumDevice ? 40 : 50,
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+
+  descriptionText: {
+    fontSize: isSmallDevice ? 13 : 15,
+    color: '#000000',
+    alignItems: 'center',
+    textAlign: 'center',
+    fontFamily: Styles.fontFamily,
+    lineHeight: isSmallDevice ? 18 : 20,
+    letterSpacing: 0.5,
+  },
+
+  // Pagination dots
+  paginationContainer: {
+    height: hp(0.5),
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: wp(2),
+    marginTop: Platform.OS === 'ios' ? Styles.insets.top + hp(5) : hp(0.5),
+    marginBottom: hp(2),
+  },
+
+  paginationDot: {
+    width: wp(2),
+    height: wp(2),
+    borderRadius: wp(1),
+    marginTop: hp(1),
+    backgroundColor: '#E5E7EB',
+  },
+
+  paginationDotActive: {
+    backgroundColor: '#218833',
+    borderRadius: wp(1.2),
+    width: wp(2.5),
+    height: wp(2.5),
+  },
+
+  // Layout spacer
+  spacer: {
+    flex: 1,
+  },
+
+  // Button section
+  buttonContainer: {
+    paddingHorizontal: wp(5),
+  },
+
+  primaryButton: {
+    backgroundColor: '#7c9b5c',
+    borderRadius: wp(8),
+    paddingVertical: hp(2),
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: hp(1.5),
+  },
+
+  primaryButtonText: {
+    color: Styles.whiteColor,
+    fontSize: Platform.OS === 'ios' ? 17 : 16,
+    fontFamily: Styles.fontFamilyBold,
+  },
+
+  secondaryButton: {
+    backgroundColor: Styles.whiteColor,
+    borderRadius: wp(8),
+    paddingVertical: hp(2),
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: Styles.buttonBorderColor,
+  },
+
+  secondaryButtonText: {
+    color: '#1a1a1a',
+    fontSize: Platform.OS === 'ios' ? 17 : 16,
+    fontFamily: Styles.fontFamilyBold,
+  },
+
+  // Footer section
+  footerContainer: {
+    marginTop: Platform.OS === 'ios' ? hp(3) : 20,
+    alignItems: 'center',
+    marginBottom: Platform.OS === 'ios' ? Styles.insets.bottom + hp(5) : hp(2),
+    paddingHorizontal: wp(5),
+  },
+
+  footerLink: {
+    color: Styles.blueColor,
+    fontSize: Platform.OS === 'ios' ? 15 : 13,
+
+    fontFamily: Styles.fontFamilyBold,
+    marginVertical: hp(0.5),
+  },
+
+  footerInfoContainer: {
+    marginTop: hp(3),
+    alignItems: 'center',
+  },
+
+  footerInfoText1: {
+    marginBottom: hp(0.2),
+    color: Styles.fontColor,
+    fontSize: Platform.OS === 'ios' ? 11 : 10,
+    textAlign: 'center',
+    lineHeight: 16,
+    fontFamily: Styles.fontFamily,
+  },
+
+  footerInfoText: {
+    color: Styles.greenColor,
+    fontSize: Platform.OS === 'ios' ? 14 : 13,
+    textAlign: 'center',
+    lineHeight: 16,
+    fontFamily: Styles.fontFamilyBold,
+  },
+
+  // Bottom sheet styles
+  bottomSheetContainer: {
+    flex: 1,
+    backgroundColor: Styles.backgroundColor,
+  },
+
+  bottomSheetHeader: {
+    height: 30,
+    flexDirection: 'row',
+    marginTop: Platform.OS === 'ios' ? hp(5) : 40,
+  },
+
+  bottomSheetHeaderContent: {
+    marginLeft: wp(2.5),
+    flexDirection: 'column',
+  },
+
+  bottomSheetHeaderRow: {
+    flexDirection: 'row',
+  },
+
+  bottomSheetHeaderText: {
+    color: Styles.greenColor,
+    fontSize: Platform.OS === 'ios' ? 20 : 19,
+    lineHeight: 20,
+    fontFamily: Styles.fontFamilyBold,
+  },
+
+  bottomSheetHeaderIcon: {
+    marginRight: wp(1.5),
+  },
+
+  bottomSheetContent: {
+    flex: 1,
+    backgroundColor: Styles.whiteColor,
+  },
+
+  bottomSheetContentInner: {
+    flex: 1,
+    marginHorizontal: wp(3),
+    marginTop: hp(1),
+    marginBottom: hp(1),
+  },
+
+  // Camera container
+  cameraContainer: {
+    flexDirection: 'column',
+    alignSelf: 'center',
+    width: wp(90),
+    height: hp(45),
+    borderRadius: wp(2.5),
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'transparent',
+    marginBottom: Platform.OS === 'ios' ? 60 : 30,
+  },
+
+  cameraContainerError: {
+    borderColor: '#C73C3B',
+    borderWidth: 1,
+  },
+
+  cameraContainerSuccess: {
+    borderColor: Styles.greenColor,
+  },
+  logoContainer: {
+    marginTop: hp(10),
+  },
+  logoImage: {
+    alignSelf: 'center',
+    width: 100,
+    height: 100,
+  },
+  logoImageSmall: {
+    alignSelf: 'center',
+    width: 100,
+    height: 30,
+    marginTop: -20,
+  },
+  cameraStyle: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+  },
+
+  cameraHeader: {
+    height: hp(5),
+    opacity: 0.8,
+    width: '100%',
+    backgroundColor: Styles.greenColor,
+    flexWrap: 'wrap',
+    alignContent: 'center',
+  },
+
+  cameraHeaderError: {
+    backgroundColor: '#C73C3B',
+    opacity: 50,
+    borderColor: 'transparent',
+  },
+
+  cameraHeaderSuccess: {
+    opacity: 20,
+    backgroundColor: Styles.greenColor,
+    borderColor: 'transparent',
+  },
+
+  cameraHeaderText: {
+    color: Styles.whiteColor,
+    fontSize: Platform.OS === 'ios' ? 15 : 14,
+    lineHeight: hp(5),
+    textAlign: 'center',
+    fontFamily: Styles.fontFamilyBold,
+    marginLeft: 10,
+    marginRight: 10,
+    alignContent: 'center',
+  },
+
+  cameraFooter: {
+    height: hp(5),
+    opacity: 0.8,
+    width: '100%',
+  },
+
+  activityIndicator: {
+    position: 'absolute',
+    top: '45%',
+    alignSelf: 'center',
+  },
+
+  // Utility styles
+  centerAlign: {
+    alignSelf: 'center',
+  },
+
+  paddingTop10: {
+    paddingTop: hp(1.2),
+  },
+
+  optionsButtonContainer: {
+    marginTop: hp(0.6),
+    marginBottom: hp(3),
+  },
+
+  bottomSheetFooter: {
+    backgroundColor: Styles.whiteColor,
+  },
+
+  // Photo library styles
+  photoLibraryContainer: {
+    width: SCREEN_WIDTH,
+  },
+
+  photoLibraryScrollContent: {
+    width: SCREEN_WIDTH * 3,
+    height: hp(40) - Styles.insets.bottom,
+  },
+
+  photoLibraryAnimatedContainer: {
+    // This combines with the Animated.View dynamic styles
+  },
+
+  noBorder: {
+    borderBottomWidth: 0,
+  },
+
+  // Privacy policy and terms text styles
+  columnFlex: {
+    flex: 1,
+    flexDirection: 'column',
+  },
+
+  privacyPolicyText: {
+    color: Styles.fontColor,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 25,
+    fontFamily: Styles.fontFamily,
+  },
+
+  privacyPolicyIndentedText: {
+    marginLeft: 10,
+    marginRight: 10,
+    color: Styles.fontColor,
+    marginTop: 5,
+    fontSize: 13,
+    lineHeight: 25,
+    fontFamily: Styles.fontFamily,
+    textAlign: 'justify',
+  },
+
+  termsHeaderText: {
+    color: Styles.fontColor,
+    fontSize: 16,
+    lineHeight: 25,
+    marginTop: 10,
+    fontFamily: Styles.fontFamilyBold,
+  },
+
+  termsBodyText: {
+    color: Styles.fontColor,
+    marginTop: 5,
+    fontSize: 13,
+    lineHeight: 25,
+    fontFamily: Styles.fontFamily,
+    textAlign: 'justify',
+  },
+
+  termsHeaderWithMargin: {
+    color: Styles.fontColor,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 25,
+    fontFamily: Styles.fontFamily,
+    marginTop: 20,
+  },
+
+  termsIndentedText: {
+    marginLeft: 10,
+    marginRight: 10,
+    color: Styles.fontColor,
+    marginTop: 5,
+    fontSize: 13,
+    lineHeight: 25,
+    fontFamily: Styles.fontFamily,
+    textAlign: 'justify',
+  },
+});

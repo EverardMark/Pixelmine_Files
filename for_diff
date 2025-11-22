@@ -1,0 +1,236 @@
+import Names from '../registration/names';
+import Styles from '../global/styles';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Text,
+  TextInput,
+  View,
+  StyleSheet, Pressable,
+  Animated as RNAnimated,
+} from 'react-native';
+import LanguageSelector from '../language/languageselector';
+import {useEffect, useState, useRef, useCallback} from 'react';
+import {useFocusEffect} from '@react-navigation/native';
+import VerticalAligner from './verticalaligner';
+
+
+import Animated, {
+  SlideInRight, SlideOutRight,
+} from "react-native-reanimated";
+
+
+const LabeledInput = props => {
+
+
+  const [focused, setFocused] = useState(false);
+
+  const [hideAnimatedLabel, setHideAnimatedLabel] = useState(false);
+
+  const texInputRef = useRef(null);
+
+  const labelTop = useRef(new RNAnimated.Value(0)).current;
+
+
+  const [height, setHeight] = useState(40)
+
+
+  /*******USE EFFECTS********/
+  useFocusEffect(
+      useCallback(() => {
+
+        if (props.autoFocus) {
+          //texInputRef.current.focus();
+        }
+        return () => {
+          //if (texInputRef.current) texInputRef.current.blur();
+        };
+      }, []),
+  );
+  /*******END USE EFFECTS********/
+
+  const onFocus = () => {
+    if (props.onFocus) props.onFocus();
+
+    let top = -28;
+
+    setFocused(true);
+
+    RNAnimated.timing(labelTop, {
+      toValue: top,
+      duration: 100,
+      useNativeDriver: true,
+    }).start(() => {
+      setHideAnimatedLabel(true);
+    });
+
+  };
+
+  const onBlur = () => {
+    if (props.onBlur) props.onBlur();
+
+    if(props.value === ""){
+
+      setHideAnimatedLabel(false);
+      setFocused(false);
+
+
+      RNAnimated.timing(labelTop, {
+        toValue: 0,
+        duration: 100,
+        useNativeDriver: true,
+      }).start(() => {});
+    }
+
+  };
+
+  const onChangeText = t => {
+
+    if (props.onChangeText) props.onChangeText(t);
+
+    if(t.split('\n').length === 1){
+      setHeight(40)
+    }
+
+    if(t.split('\n').length === 2){
+      setHeight(80)
+    }
+
+    if(t.split('\n').length === 3){
+      setHeight(120)
+    }
+
+
+
+  };
+
+  const onTextPress = () => {
+    if (props.onPress) props.onPress();
+  }
+
+  return (
+      <View
+          style={[
+            {
+
+              borderColor: focused
+                  ? Styles.greenColor
+                  : Styles.containerBorderColor,
+            },
+            {height:props.multiline ? 150 : 55},
+            styles.container,
+            props.style
+          ]}>
+
+
+        {(props.invalidMessage && props.showInvalidMessage) && (
+
+            <Animated.View entering={SlideInRight} exiting={SlideOutRight} style={{position:"absolute", top:-28, backgroundColor:Styles.backgroundColor, right:10, height:"100%"}} >
+              <VerticalAligner/>
+              <Text style={styles.invalidMessage}>{props.invalidMessage}</Text>
+              <VerticalAligner/>
+            </Animated.View>
+
+        )}
+
+        {(!hideAnimatedLabel && !props.pressable) && (
+
+            <Pressable style={{height:"100%"}} onPress={onFocus}>
+
+              <RNAnimated.View style={[{transform: [{translateY: labelTop}]}, {alignSelf:"baseline", marginLeft:10}]}>
+
+                <Text style={[styles.labelPlaceHolder, {lineHeight:20, marginTop:15, textAlign: "left", backgroundColor:Styles.whiteColor}]}>{props.label}</Text>
+
+              </RNAnimated.View>
+
+            </Pressable>
+
+        )}
+
+        {(hideAnimatedLabel && !props.pressable) && (
+
+            <View style={{alignSelf:"baseline", marginLeft:10, marginTop:-13, backgroundColor:Styles.whiteColor}}>
+
+              <Text style={[styles.labelPlaceHolder, {lineHeight:20}]}>{props.label}</Text>
+
+            </View>
+
+        )}
+
+
+
+
+        {(focused && !props.pressable) && (
+
+            <TextInput
+                editable={props.editable}
+                value={props.value}
+                ref={texInputRef}
+                autoFocus={true}
+                multiline={props.multiline}
+                numberOfLines={props.numberOfLines}
+                maxLength={props.maxLength}
+                onBlur={() => onBlur()}
+                onFocus={() => onFocus()}
+                onChangeText={t => onChangeText(t)}
+                style={[styles.input, {height:height}]}
+
+            />
+
+        )}
+
+        {props.pressable && (
+
+            <Pressable style={{height:"100%"}} onPress={onTextPress}>
+              <VerticalAligner/>
+              <Text style={[styles.labelPlaceHolder, {textAlign: "left"}]}>{props.value}</Text>
+              <VerticalAligner/>
+            </Pressable>
+
+        )}
+
+      </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    borderWidth: 1,
+    borderRadius: 10,
+  },
+  labelTop: {
+    position:"absolute",
+    left:10,
+    top: 10,
+    backgroundColor:Styles.whiteColor,
+    color: Styles.textInputLabelColor,
+    fontSize: 15,
+    fontFamily: Styles.fontFamily,
+  },
+  invalidMessage:{
+    color: Styles.redColor,
+    fontSize: 13,
+    fontFamily: Styles.fontFamilyBold
+  },
+  labelPlaceHolder: {
+    marginHorizontal:10,
+    color: Styles.textInputLabelColor,
+    fontSize: 15,
+    fontFamily: Styles.fontFamily,
+    textAlign:"center"
+  },
+  input: {
+    position:"absolute",
+    textAlignVertical:"top",
+    marginLeft: 5,
+    marginRight: 5,
+    top:7,
+    color: Styles.fontColor,
+    fontSize: 17,
+    fontFamily: Styles.fontFamilyBold,
+    lineHeight:20,
+    paddingHorizontal:10
+  },
+});
+
+export default LabeledInput;
